@@ -6,15 +6,21 @@ import android.graphics.ImageDecoder
 import android.content.Context
 import android.os.Build
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectTransformGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.VerticalPager
 import androidx.compose.foundation.pager.rememberPagerState
@@ -26,6 +32,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.ChevronLeft
 import androidx.compose.material.icons.filled.ChevronRight
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.MenuBook
 import androidx.compose.material.icons.filled.SwapHoriz
 import androidx.compose.material3.Button
@@ -41,6 +48,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.produceState
@@ -50,6 +58,7 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -57,19 +66,20 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import app.omnireader.android.OmniReaderApplication
-import app.omnireader.android.data.db.LibraryItemEntity
 import app.omnireader.android.reader.ComicReaderSession
 import app.omnireader.android.reader.PagedBitmapReaderSession
 import app.omnireader.android.reader.ReaderSession
+import app.omnireader.android.reader.TextBlock
 import app.omnireader.android.reader.TextReaderSession
 import com.t8rin.tiff_coder.TiffCoder
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.nio.ByteBuffer
 import java.io.File
-
 
 private sealed interface BitmapLoadState {
     data object Loading : BitmapLoadState
@@ -123,18 +133,80 @@ fun ReaderScreen(itemId: Long, onBack: () -> Unit) {
 @Composable
 private fun TextReader(session: TextReaderSession, app: OmniReaderApplication) {
     val chapters = session.chapters
-    var chapterIndex by remember(session) { mutableStateOf((session.item.currentChapter ?: 0).coerceIn(0, (chapters.size - 1).coerceAtLeast(0))) }
-    val scroll = rememberScrollState()
+    if (chapters.isEmpty()) {
+        Text("В книге не найдено глав")
+        return
+    }
 
+    var chapterIndex by remember(session) { mutableStateOf((session.item.currentChapter ?: 0).coerceIn(0, chapters.lastIndex)) }
+    var fullScreenBitmap by remember(session) { mutableStateOf<Bitmap?>(null) }
+    val blocks = session.blocks(chapterIndex)
+    val hasImages = blocks.any { it is TextBlock.Image }
+
+    Column(Modifier.fillMaxSize()) {
+        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+            IconButton(onClick = { if (chapterIndex > 0) chapterIndex-- }, enabled = chapterIndex > 0) { Icon(Icons.Default.ChevronLeft, "Предыдущая глава") }
+            Icon(Icons.Default.MenuBook, null)
+            Text(" ${chapterIndex + 1}/${chapters.size} • ${chapters[chapterIndex].title}", modifier = Modifier.weight(1f), maxLines = 1)
+            IconButton(onClick = { if (chapterIndex < chapters.lastIndex) chapterIndex++ }, enabled = chapterIndex < chapters.lastIndex) { Icon(Icons.Default.ChevronRight, "Следующая глава") }
+        }
+
+        key(chapterIndex) {
+            if (hasImages) {
+                RichEpubChapter(
+                    session = session,
+                    app = app,
+                    chapterIndex = chapterIndex,
+                    blocks = blocks,
+                    onOpenImage = { fullScreenBitmap = it },
+                )
+            } else {
+                PlainTextChapter(
+                    session = session,
+                    app = app,
+                    chapterIndex = chapterIndex,
+                    blocks = blocks,
+                )
+            }
+        }
+    }
+
+    fullScreenBitmap?.let { bitmap ->
+        Dialog(
+            onDismissRequest = { fullScreenBitmap = null },
+            properties = DialogProperties(usePlatformDefaultWidth = false),
+        ) {
+            Box(Modifier.fillMaxSize().background(Color.Black)) {
+                ZoomableBitmap(bitmap)
+                IconButton(
+                    onClick = { fullScreenBitmap = null },
+                    modifier = Modifier.align(Alignment.TopEnd).padding(12.dp),
+                ) {
+                    Icon(Icons.Default.Close, "Закрыть изображение", tint = Color.White)
+                }
+            }
+        }
+    }
+}
+
+@Composable
+private fun PlainTextChapter(
+    session: TextReaderSession,
+    app: OmniReaderApplication,
+    chapterIndex: Int,
+    blocks: List<TextBlock>,
+) {
+    val chapters = session.chapters
+    val scroll = rememberScrollState()
     val savedOffset = if (chapterIndex == (session.item.currentChapter ?: 0))
         (session.item.positionOffset ?: 0L).toInt().coerceAtLeast(0) else 0
-    LaunchedEffect(chapterIndex, scroll.maxValue) {
-        // maxValue is 0 before the text is laid out. Re-run once layout exposes the real range.
+
+    LaunchedEffect(scroll.maxValue) {
         if (savedOffset == 0 || scroll.maxValue > 0) {
             scroll.scrollTo(savedOffset.coerceAtMost(scroll.maxValue.coerceAtLeast(0)))
         }
     }
-    LaunchedEffect(chapterIndex, scroll) {
+    LaunchedEffect(scroll) {
         snapshotFlow { Triple(scroll.isScrollInProgress, scroll.value, scroll.maxValue) }
             .collect { (moving, value, max) ->
                 if (!moving) {
@@ -145,22 +217,131 @@ private fun TextReader(session: TextReaderSession, app: OmniReaderApplication) {
             }
     }
 
-    Column(Modifier.fillMaxSize()) {
-        Row(Modifier.fillMaxWidth().padding(horizontal = 10.dp, vertical = 6.dp), verticalAlignment = Alignment.CenterVertically) {
-            IconButton(onClick = { if (chapterIndex > 0) chapterIndex-- }, enabled = chapterIndex > 0) { Icon(Icons.Default.ChevronLeft, "Предыдущая глава") }
-            Icon(Icons.Default.MenuBook, null)
-            Text(" ${chapterIndex + 1}/${chapters.size} • ${chapters[chapterIndex].title}", modifier = Modifier.weight(1f), maxLines = 1)
-            IconButton(onClick = { if (chapterIndex < chapters.lastIndex) chapterIndex++ }, enabled = chapterIndex < chapters.lastIndex) { Icon(Icons.Default.ChevronRight, "Следующая глава") }
-        }
-        SelectionContainer {
-            Column(
-                Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 22.dp, vertical = 18.dp),
-                verticalArrangement = Arrangement.spacedBy(16.dp),
-            ) {
-                Text(chapters[chapterIndex].title, style = MaterialTheme.typography.headlineSmall)
+    Column(
+        Modifier.fillMaxSize().verticalScroll(scroll).padding(horizontal = 22.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        Text(chapters[chapterIndex].title, style = MaterialTheme.typography.headlineSmall)
+        if (blocks.isEmpty()) {
+            SelectionContainer {
                 Text(chapters[chapterIndex].text, style = MaterialTheme.typography.bodyLarge)
             }
+        } else {
+            blocks.forEach { block ->
+                when (block) {
+                    is TextBlock.Paragraph -> SelectionContainer {
+                        Text(block.text, style = MaterialTheme.typography.bodyLarge)
+                    }
+                    is TextBlock.Heading -> SelectionContainer {
+                        Text(
+                            block.text,
+                            style = if (block.level <= 2) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge,
+                        )
+                    }
+                    is TextBlock.Image -> Unit
+                }
+            }
         }
+    }
+}
+
+@Composable
+private fun RichEpubChapter(
+    session: TextReaderSession,
+    app: OmniReaderApplication,
+    chapterIndex: Int,
+    blocks: List<TextBlock>,
+    onOpenImage: (Bitmap) -> Unit,
+) {
+    val chapters = session.chapters
+    val storedOffset = if (chapterIndex == (session.item.currentChapter ?: 0))
+        (session.item.positionOffset ?: 0L).toInt() else 0
+    val initialBlock = storedOffset.takeIf { it in blocks.indices } ?: 0
+    val listState = rememberLazyListState(initialFirstVisibleItemIndex = if (initialBlock == 0) 0 else initialBlock + 1)
+
+    LaunchedEffect(listState, blocks.size) {
+        snapshotFlow { listState.firstVisibleItemIndex }
+            .collect { visibleItem ->
+                val visibleBlock = (visibleItem - 1).coerceIn(0, (blocks.size - 1).coerceAtLeast(0))
+                val local = if (blocks.isEmpty()) 0f else visibleBlock.toFloat() / blocks.size
+                val progress = ((chapterIndex + local) / chapters.size.coerceAtLeast(1)).coerceIn(0f, 1f)
+                app.container.repository.saveProgress(session.item.id, chapterIndex, null, visibleBlock.toLong(), progress)
+            }
+    }
+
+    LazyColumn(
+        state = listState,
+        modifier = Modifier.fillMaxSize(),
+        contentPadding = PaddingValues(horizontal = 22.dp, vertical = 18.dp),
+        verticalArrangement = Arrangement.spacedBy(16.dp),
+    ) {
+        item {
+            Text(chapters[chapterIndex].title, style = MaterialTheme.typography.headlineSmall)
+        }
+        items(count = blocks.size, key = { it }) { index ->
+            when (val block = blocks[index]) {
+                is TextBlock.Paragraph -> SelectionContainer {
+                    Text(block.text, style = MaterialTheme.typography.bodyLarge)
+                }
+                is TextBlock.Heading -> SelectionContainer {
+                    Text(
+                        block.text,
+                        style = if (block.level <= 2) MaterialTheme.typography.headlineSmall else MaterialTheme.typography.titleLarge,
+                    )
+                }
+                is TextBlock.Image -> EpubIllustration(
+                    session = session,
+                    block = block,
+                    app = app,
+                    onOpen = onOpenImage,
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun EpubIllustration(
+    session: TextReaderSession,
+    block: TextBlock.Image,
+    app: OmniReaderApplication,
+    onOpen: (Bitmap) -> Unit,
+) {
+    val image by produceState<BitmapLoadState>(BitmapLoadState.Loading, session, block.source) {
+        value = try {
+            val bitmap = withContext(Dispatchers.IO) {
+                val bytes = session.loadAsset(block.source) ?: error("EPUB: изображение не найдено")
+                decodeImageBytes(app, bytes)
+            } ?: error("EPUB: формат изображения не поддерживается")
+            BitmapLoadState.Ready(bitmap)
+        } catch (t: Throwable) {
+            BitmapLoadState.Error(t.message ?: "EPUB: не удалось открыть иллюстрацию")
+        }
+    }
+
+    when (val state = image) {
+        BitmapLoadState.Loading -> Box(Modifier.fillMaxWidth().padding(24.dp), contentAlignment = Alignment.Center) {
+            CircularProgressIndicator()
+        }
+        is BitmapLoadState.Ready -> {
+            val ratio = state.bitmap.width.toFloat() / state.bitmap.height.coerceAtLeast(1).toFloat()
+            Image(
+                bitmap = state.bitmap.asImageBitmap(),
+                contentDescription = block.alt,
+                contentScale = ContentScale.Fit,
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .aspectRatio(ratio.coerceIn(0.05f, 20f))
+                    .clickable { onOpen(state.bitmap) },
+            )
+        }
+        is BitmapLoadState.Error -> Text(
+            state.message,
+            color = MaterialTheme.colorScheme.error,
+            style = MaterialTheme.typography.bodySmall,
+            modifier = Modifier.fillMaxWidth().padding(vertical = 8.dp),
+            textAlign = TextAlign.Center,
+        )
     }
 }
 

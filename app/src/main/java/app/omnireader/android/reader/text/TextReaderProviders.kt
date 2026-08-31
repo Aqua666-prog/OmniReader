@@ -3,12 +3,14 @@ package app.omnireader.android.reader.text
 import android.content.Context
 import android.net.Uri
 import android.text.Html
+import android.util.Base64
 import android.util.Xml
 import app.omnireader.android.core.cache.SafFileCache
 import app.omnireader.android.core.model.FileFormat
 import app.omnireader.android.data.db.LibraryItemEntity
 import app.omnireader.android.reader.ReaderProvider
 import app.omnireader.android.reader.ReaderSession
+import app.omnireader.android.reader.TextBlock
 import app.omnireader.android.reader.TextChapter
 import app.omnireader.android.reader.TextReaderSession
 import app.omnireader.android.scanner.TextEncodingDetector
@@ -16,6 +18,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.xmlpull.v1.XmlPullParser
 import java.io.ByteArrayInputStream
+import java.io.File
 import java.nio.charset.Charset
 import java.util.zip.ZipFile
 import java.util.zip.ZipInputStream
@@ -58,17 +61,120 @@ class TextReaderProvider(
             }.toMap()
             val spine = Regex("<itemref\\b[^>]*idref=[\"']([^\"']+)", RegexOption.IGNORE_CASE).findAll(opf).map { it.groupValues[1] }.toList()
             val base = opfPath.substringBeforeLast('/', "")
+            val chapterBlocks = mutableListOf<List<TextBlock>>()
             val chapters = spine.mapNotNull { id ->
                 val href = hrefById[id] ?: return@mapNotNull null
                 val path = normalize(if (base.isBlank()) href else "$base/$href")
                 val entry = zip.getEntry(path) ?: return@mapNotNull null
-                val html = zip.getInputStream(entry).readBytes().toString(Charsets.UTF_8)
-                val text = htmlToText(html).trim()
-                if (text.isBlank()) null else TextChapter(extractHtmlTitle(html) ?: href.substringAfterLast('/').substringBeforeLast('.'), text)
+                val html = zip.getInputStream(entry).bufferedReader(Charsets.UTF_8).use { it.readText() }
+                val blocks = epubHtmlToBlocks(html, path)
+                if (blocks.isEmpty()) return@mapNotNull null
+                val plainText = blocks.asSequence().mapNotNull { block ->
+                    when (block) {
+                        is TextBlock.Paragraph -> block.text
+                        is TextBlock.Heading -> block.text
+                        is TextBlock.Image -> block.alt?.takeIf { it.isNotBlank() }
+                    }
+                }.joinToString("\n\n").trim()
+                val title = extractHtmlTitle(html)
+                    ?: href.substringAfterLast('/').substringBeforeLast('.')
+                chapterBlocks += blocks
+                TextChapter(title, plainText)
             }
             if (chapters.isEmpty()) error("EPUB: не удалось прочитать spine")
-            return TextReaderSession(item, chapters)
+            return TextReaderSession(
+                item = item,
+                chapters = chapters,
+                chapterBlocks = chapterBlocks,
+                assetLoader = { source -> loadEpubAsset(staged, source) },
+            )
         }
+    }
+
+    private fun epubHtmlToBlocks(html: String, chapterPath: String): List<TextBlock> {
+        data class ImageRef(val source: String, val alt: String?)
+
+        val imageRefs = mutableListOf<ImageRef>()
+        val imageTag = Regex("<(?:img|image|object)\\b[^>]*>", RegexOption.IGNORE_CASE)
+        val markedHtml = imageTag.replace(html) { match ->
+            val tag = match.value
+            val rawSource = attribute(tag, "src")
+                ?: attribute(tag, "href")
+                ?: attribute(tag, "xlink:href")
+                ?: attribute(tag, "data")
+                ?: attribute(tag, "srcset")?.substringBefore(',')?.trim()?.substringBefore(' ')
+            if (rawSource.isNullOrBlank()) {
+                ""
+            } else {
+                val source = resolveEpubResource(chapterPath, rawSource)
+                val index = imageRefs.size
+                imageRefs += ImageRef(source, attribute(tag, "alt"))
+                " [[OMNI_IMAGE_$index]] "
+            }
+        }
+
+        val textWithMarkers = htmlToText(markedHtml)
+        val marker = Regex("\\[\\[OMNI_IMAGE_(\\d+)]]")
+        val blocks = mutableListOf<TextBlock>()
+
+        fun addText(value: String) {
+            value.replace('\u00A0', ' ')
+                .trim()
+                .split(Regex("\\n{2,}"))
+                .map { it.trim() }
+                .filter { it.isNotBlank() }
+                .forEach { blocks += TextBlock.Paragraph(it) }
+        }
+
+        var cursor = 0
+        marker.findAll(textWithMarkers).forEach { match ->
+            addText(textWithMarkers.substring(cursor, match.range.first))
+            val index = match.groupValues[1].toIntOrNull()
+            imageRefs.getOrNull(index ?: -1)?.let { ref ->
+                blocks += TextBlock.Image(ref.source, ref.alt)
+            }
+            cursor = match.range.last + 1
+        }
+        addText(textWithMarkers.substring(cursor))
+
+        return blocks
+    }
+
+    private fun loadEpubAsset(staged: File, source: String): ByteArray? {
+        if (source.startsWith("data:", ignoreCase = true)) {
+            val comma = source.indexOf(',')
+            if (comma <= 0) return null
+            val header = source.substring(0, comma)
+            val payload = source.substring(comma + 1)
+            return if (header.contains(";base64", ignoreCase = true)) {
+                runCatching { Base64.decode(payload, Base64.DEFAULT) }.getOrNull()
+            } else {
+                Uri.decode(payload).toByteArray(Charsets.UTF_8)
+            }
+        }
+        return ZipFile(staged).use { zip ->
+            val entry = zip.getEntry(source) ?: zip.getEntry(Uri.decode(source)) ?: return@use null
+            zip.getInputStream(entry).use { it.readBytes() }
+        }
+    }
+
+    private fun resolveEpubResource(chapterPath: String, rawSource: String): String {
+        if (rawSource.startsWith("data:", ignoreCase = true)) return rawSource
+        val withoutFragment = rawSource.substringBefore('#').substringBefore('?')
+        val decoded = Uri.decode(withoutFragment)
+        if (decoded.startsWith('/')) return normalize(decoded.removePrefix("/"))
+        val chapterDir = chapterPath.substringBeforeLast('/', "")
+        return normalize(if (chapterDir.isBlank()) decoded else "$chapterDir/$decoded")
+    }
+
+    private fun attribute(tag: String, name: String): String? {
+        val escaped = Regex.escape(name)
+        return Regex("(?:^|\\s)$escaped\\s*=\\s*([\"'])(.*?)\\1", setOf(RegexOption.IGNORE_CASE, RegexOption.DOT_MATCHES_ALL))
+            .find(tag)
+            ?.groupValues
+            ?.get(2)
+            ?.trim()
+            ?.takeIf { it.isNotBlank() }
     }
 
     private fun openFb2(item: LibraryItemEntity, bytes: ByteArray): TextReaderSession {
@@ -147,6 +253,7 @@ class TextReaderProvider(
     }
 
     private fun htmlToText(html: String): String = Html.fromHtml(html, Html.FROM_HTML_MODE_LEGACY).toString()
+        .replace("\uFFFC", "")
         .replace(Regex("\\n{3,}"), "\n\n")
 
     private fun markdownToText(md: String): String = md
