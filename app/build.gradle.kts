@@ -7,12 +7,12 @@ plugins {
 
 android {
     namespace = "com.sergey.reader"
-    compileSdk = 37
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.sergey.reader"
         minSdk = 26
-        targetSdk = 37
+        targetSdk = 36
         versionCode = 4
         versionName = "0.4.0"
 
