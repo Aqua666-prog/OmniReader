@@ -185,8 +185,27 @@ fun SettingsScreen(vm: LibraryViewModel, onBack: () -> Unit) {
                 Switch(settings.justify, vm::setJustify)
             }
 
+            Row(
+                Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Column(Modifier.weight(1f)) {
+                    Text("Скрывать панели тапом")
+                    Text("Тап по странице переключает полноэкранный режим чтения", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(settings.showControlsOnTap, vm::setShowControlsOnTap)
+            }
+
             Spacer(Modifier.height(28.dp))
             Text("Озвучка (TTS)", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Column(Modifier.weight(1f)) {
+                    Text("Аудиочтение")
+                    Text("Можно полностью отключить TTS; активная озвучка остановится", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(settings.ttsEnabled, vm::setTtsEnabled)
+            }
             Text("Скорость: ${"%.2f".format(settings.ttsRate)}×")
             Slider(value = settings.ttsRate, onValueChange = vm::setTtsRate, valueRange = 0.1f..4.0f)
             Text("Высота голоса: ${"%.2f".format(settings.ttsPitch)}×")
@@ -271,7 +290,7 @@ fun SettingsScreen(vm: LibraryViewModel, onBack: () -> Unit) {
             )
             Spacer(Modifier.height(10.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { backupLauncher.launch("Reader-backup-0.4.0.readerbackup") }) {
+                Button(onClick = { backupLauncher.launch("Reader-backup-0.5.0.readerbackup") }) {
                     Text("Создать копию")
                 }
                 Button(onClick = { restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream")) }) {
@@ -286,12 +305,12 @@ fun SettingsScreen(vm: LibraryViewModel, onBack: () -> Unit) {
 
             Spacer(Modifier.height(28.dp))
             Text("Импорт", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
-            Text("Поддержка текущей версии: EPUB, FB2, TXT и PDF. EPUB отображает встроенные иллюстрации, строки таблиц и распознанные сноски. На Android 15+ PDF дополнительно индексирует системный текстовый слой для поиска, TTS и цитирования через режим «Текст страницы».")
+            Text("Форматы: EPUB, FB2, FB2.ZIP, FB2.GZ, TXT, PDF, HTML/HTM, Markdown, RTF, DOCX, ODT, MOBI/AZW/AZW3 (без DRM; PalmDOC), ZIP, CBZ, CBR, CB7, CHM и DjVu/DJV. DjVu отображается постранично через нативный DjVuLibre backend. EPUB поддерживает иллюстрации, сноски и переходы из встроенного оглавления.")
 
             Spacer(Modifier.height(28.dp))
-            Text("Reader 0.4.0", style = MaterialTheme.typography.labelLarge)
+            Text("Reader 0.5.0", style = MaterialTheme.typography.labelLarge)
             Text(
-                "В этой версии: типографически точная пагинация Compose с сохранением смещения, PDF text layer (Android 15+), подсветка текущего фрагмента TTS, таймер сна, TXT/HTML-экспорт и улучшенный разбор EPUB.",
+                "В этой версии: расширенный импорт форматов и архивов, кликабельное EPUB-оглавление, полноэкранные иллюстрации с сохранением, прогресс внутри главы, скрытие панелей тапом, быстрые настройки текста и явное отключение/остановка TTS.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )

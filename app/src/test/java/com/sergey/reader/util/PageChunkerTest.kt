@@ -26,4 +26,17 @@ class PageChunkerTest {
         val page = PageChunker.pageForBlock(pages, 7)
         assertTrue(7 in pages[page].startBlock until pages[page].endBlockExclusive)
     }
+
+    @Test
+    fun djvuPageGetsOwnPageAndLinkHasTextCost() {
+        val blocks = listOf(
+            ReaderBlock(ReaderBlock.Kind.LINK, "Глава 2".repeat(20), 0, 0, "chapter:1"),
+            ReaderBlock(ReaderBlock.Kind.PARAGRAPH, "x".repeat(300), 0, 1),
+            ReaderBlock(ReaderBlock.Kind.DJVU_PAGE, "", 1, 0, "0"),
+            ReaderBlock(ReaderBlock.Kind.DJVU_TEXT, "hidden", 1, 1, "0")
+        )
+        val pages = PageChunker.chunk(blocks, 300)
+        assertTrue(pages.any { it.startBlock == 2 && it.endBlockExclusive == 3 })
+        assertTrue(pages.size >= 3)
+    }
 }

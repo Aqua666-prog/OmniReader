@@ -1,3 +1,18 @@
+# STATUS
+
+## 0.5.0 — расширенные форматы, DjVu и переработанный reader UI
+
+Готово в source tree:
+- EPUB, FB2, FB2.ZIP/FB2.GZ, TXT, PDF, HTML/HTM/XHTML, Markdown, RTF, DOCX, ODT, DRM-free MOBI/AZW/AZW3, ZIP, CBZ, CBR, CB7, CHM, DjVu/DJV.
+- Нативный постраничный DjVu renderer через DjVuLibre; встроенный текстовый слой DjVu (если есть) участвует в поиске, TTS и действиях над выделением.
+- Полноэкранный просмотр/сохранение иллюстраций.
+- Скрытие reader bars тапом, улучшенные настройки текста и оглавление.
+- EPUB internal links -> переход к главе.
+- Прогресс страницы внутри главы в paged mode.
+- Глобальное отключение TTS и отдельная Stop-команда.
+
+Проверка: исходники проходят локальные статические/синтаксические проверки доступных модулей. Полный Android build должен пройти в GitHub Actions, так как локальная среда этой сборки не содержит Android SDK/Gradle distribution.
+
 # Статус разработки
 
 ## 0.4.0 — точная пагинация, PDF text layer, TTS-follow, sleep timer, TXT/HTML export
@@ -34,12 +49,15 @@
 - [x] EPUB footnote blocks
 - [x] PDF page renderer
 - [x] PDF hidden/searchable/speakable text layer (API 35+)
+- [x] DjVu hidden/searchable/speakable text layer when embedded in the source file
 - [x] PDF «Текст страницы» selectable sheet
+- [x] DjVu «Текст страницы» selectable sheet when embedded text is available
 - [x] reading progress
 - [x] table of contents
 - [x] bookmarks
 - [x] EPUB/FB2/TXT search + exact paged jump to match offset
 - [x] PDF search when platform text is available
+- [x] DjVu search when embedded text is available
 - [x] custom `.ttf/.otf` fonts
 - [x] per-book typography/theme/mode profile
 - [x] jump from research center to saved location
@@ -61,6 +79,7 @@
 - [x] translator / web search / dictionary URL templates
 - [x] personal dictionary
 - [x] PDF quote/note/highlight through extracted page text (API 35+)
+- [x] DjVu quote/note/highlight through embedded page text
 
 ### Исследовательский центр
 - [x] Quotes tab
@@ -79,6 +98,7 @@
 - [x] background / screen-off playback
 - [x] sequential text-block reading
 - [x] PDF text-layer reading on API 35+
+- [x] DjVu embedded text-layer reading
 - [x] Pause / Resume / Stop
 - [x] Previous / Next
 - [x] starts from current reading position
@@ -111,7 +131,7 @@
 - [x] migration 2 -> 3
 - [x] migration 3 -> 4 (`books.positionOffset`)
 - [x] paragraph kind/resource path
-- [x] `PDF_TEXT` block kind without a schema change to paragraphs
+- [x] `PDF_TEXT` / `DJVU_TEXT` block kinds without a schema change to paragraphs
 - [x] book reading profiles
 - [x] CI workflow
 

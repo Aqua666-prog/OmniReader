@@ -175,12 +175,14 @@ class EpubParser(private val context: Context) : BookParser {
         var ignoreDepth = 0
         var footnoteDepth = 0
         var footnoteBuffer = StringBuilder()
+        var localLinkHref: String? = null
+        var localLinkText = StringBuilder()
 
         fun flushBlock(partial: Boolean = false) {
             val text = TextUtil.normalizeParagraph(buffer.toString())
             if (text.isNotBlank()) {
                 if (activeBlock in headingTags && heading == null) heading = text
-                if (activeBlock !in headingTags || elements.none { it.kind == ParsedElement.Kind.PARAGRAPH }) {
+                if (activeBlock !in headingTags) {
                     elements += ParsedElement(ParsedElement.Kind.PARAGRAPH, text = text)
                 }
             }
@@ -193,6 +195,15 @@ class EpubParser(private val context: Context) : BookParser {
             when (event) {
                 XmlPullParser.START_TAG -> {
                     val name = parser.name.lowercase()
+
+                    if (ignoreDepth == 0 && footnoteDepth == 0 && name == "a") {
+                        val href = findLinkHref(parser)
+                        if (!href.isNullOrBlank() && !href.startsWith("http://", true) &&
+                            !href.startsWith("https://", true) && !href.startsWith("mailto:", true)) {
+                            localLinkHref = resolveRelative(sourceRef, href)
+                            localLinkText = StringBuilder()
+                        }
+                    }
 
                     if (ignoreDepth == 0 && activeBlock != null && name == "br") buffer.append('\n')
                     if (ignoreDepth == 0 && activeBlock == "table" && (name == "td" || name == "th") && buffer.isNotBlank()) {
@@ -223,6 +234,7 @@ class EpubParser(private val context: Context) : BookParser {
                 }
 
                 XmlPullParser.TEXT -> {
+                    if (localLinkHref != null) localLinkText.append(parser.text).append(' ')
                     when {
                         footnoteDepth > 0 -> footnoteBuffer.append(parser.text).append(' ')
                         ignoreDepth == 0 && activeBlock != null -> buffer.append(parser.text).append(' ')
@@ -231,6 +243,21 @@ class EpubParser(private val context: Context) : BookParser {
 
                 XmlPullParser.END_TAG -> {
                     val name = parser.name.lowercase()
+                    if (name == "a" && localLinkHref != null) {
+                        val label = TextUtil.normalizeParagraph(localLinkText.toString())
+                        // EPUB navigation is usually <li><a href="chapter.xhtml">…</a></li>.
+                        // Turn these entries into real in-reader chapter links instead of dead text.
+                        if (activeBlock == "li" && label.isNotBlank()) {
+                            elements += ParsedElement(
+                                ParsedElement.Kind.LINK,
+                                text = label,
+                                resourcePath = localLinkHref
+                            )
+                            buffer = StringBuilder()
+                        }
+                        localLinkHref = null
+                        localLinkText = StringBuilder()
+                    }
                     if (footnoteDepth > 0) {
                         footnoteDepth--
                         if (footnoteDepth == 0) {
@@ -248,11 +275,23 @@ class EpubParser(private val context: Context) : BookParser {
         }
         if (activeBlock != null && buffer.isNotBlank()) flushBlock()
 
+        val cleanHeading = heading ?: "Глава $number"
+        val cleanedElements = elements.distinctConsecutive().toMutableList().apply {
+            // Some EPUB generators repeat the chapter heading once more as the first
+            // ordinary paragraph. The reader already renders the chapter title as a
+            // dedicated CHAPTER block, so suppress only that immediate duplicate.
+            val firstText = indexOfFirst { it.kind == ParsedElement.Kind.PARAGRAPH }
+            if (firstText >= 0 && this[firstText].text.equals(cleanHeading, ignoreCase = true)) {
+                removeAt(firstText)
+            }
+        }
         return ParsedChapter(
-            title = heading ?: "Глава $number",
-            paragraphs = elements.filter { it.kind == ParsedElement.Kind.PARAGRAPH || it.kind == ParsedElement.Kind.FOOTNOTE }.map { it.text },
+            title = cleanHeading,
+            paragraphs = cleanedElements
+                .filter { it.kind == ParsedElement.Kind.PARAGRAPH || it.kind == ParsedElement.Kind.FOOTNOTE }
+                .map { it.text },
             sourceRef = sourceRef,
-            elements = elements.distinctConsecutive()
+            elements = cleanedElements
         )
     }
 
@@ -269,6 +308,16 @@ class EpubParser(private val context: Context) : BookParser {
         }
         return type?.contains("footnote", ignoreCase = true) == true ||
             role?.contains("doc-footnote", ignoreCase = true) == true
+    }
+
+    private fun findLinkHref(parser: XmlPullParser): String? {
+        parser.getAttributeValue(null, "href")?.takeIf { it.isNotBlank() }?.let { return it }
+        for (i in 0 until parser.attributeCount) {
+            if (parser.getAttributeName(i).endsWith("href", ignoreCase = true)) {
+                return parser.getAttributeValue(i)?.takeIf { it.isNotBlank() }
+            }
+        }
+        return null
     }
 
     private fun findImageHref(parser: XmlPullParser): String? {

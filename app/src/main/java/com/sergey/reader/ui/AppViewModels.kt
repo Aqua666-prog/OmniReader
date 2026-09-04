@@ -111,6 +111,8 @@ class LibraryViewModel(private val c: AppContainer) : ViewModel() {
     fun setPadding(value: Float) = viewModelScope.launch { c.settings.setPadding(value) }
     fun setTheme(value: ReaderThemePreset) = viewModelScope.launch { c.settings.setTheme(value) }
     fun setJustify(value: Boolean) = viewModelScope.launch { c.settings.setJustify(value) }
+    fun setShowControlsOnTap(value: Boolean) = viewModelScope.launch { c.settings.setShowControlsOnTap(value) }
+    fun setTtsEnabled(value: Boolean) = viewModelScope.launch { c.settings.setTtsEnabled(value) }
     fun setFontPath(value: String?) = viewModelScope.launch { c.settings.setFontPath(value) }
     fun setReaderMode(value: ReaderMode) = viewModelScope.launch { c.settings.setReaderMode(value) }
     fun setTranslatorTemplate(value: String) = viewModelScope.launch { c.settings.setTranslatorUrlTemplate(value) }
@@ -300,6 +302,14 @@ class ReaderViewModel(private val c: AppContainer, private val bookId: Long) : V
         profileChange = { it.copy(readerMode = value.name) },
         globalChange = { c.settings.setReaderMode(value) }
     )
+
+    fun setShowControlsOnTap(value: Boolean) = viewModelScope.launch {
+        c.settings.setShowControlsOnTap(value)
+    }
+
+    fun setTtsEnabled(value: Boolean) = viewModelScope.launch {
+        c.settings.setTtsEnabled(value)
+    }
 
     private fun updateReadingSetting(
         profileChange: (BookReadingProfileEntity) -> BookReadingProfileEntity,

@@ -13,8 +13,8 @@ android {
         applicationId = "com.sergey.reader"
         minSdk = 26
         targetSdk = 36
-        versionCode = 4
-        versionName = "0.4.0"
+        versionCode = 5
+        versionName = "0.5.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -35,7 +35,6 @@ android {
         targetCompatibility = JavaVersion.VERSION_17
     }
 
-
     buildFeatures {
         compose = true
         buildConfig = true
@@ -46,6 +45,52 @@ android {
     }
 }
 
+// DjVuLibre is pinned to a fork that ships Android 16 / 16 KB-page compatible
+// native libraries.  Instead of asking JitPack to rebuild the native project,
+// download the already-published AAR from that exact Git commit.  The Gradle
+// file dependency is builtBy this task, so ordinary assemble/test commands fetch
+// it automatically on the first build.
+val djvuAarUrl =
+    "https://raw.githubusercontent.com/Kazzenkatt/android-djvulibre/5b9bd591befc528268cf00c28e8fb81bc75d664b/build/outputs/aar/android-djvulibre-release.aar"
+val djvuAarGitBlobSha1 = "bde3f2e2cbe693343e5180b69e80b5580b40ecd4"
+val djvuAarFile = layout.projectDirectory.file("libs/android-djvulibre-release.aar")
+
+fun gitBlobSha1(file: java.io.File): String {
+    val digest = java.security.MessageDigest.getInstance("SHA-1")
+    digest.update("blob ${file.length()}\u0000".toByteArray(Charsets.UTF_8))
+    file.inputStream().buffered().use { input ->
+        val buffer = ByteArray(64 * 1024)
+        while (true) {
+            val read = input.read(buffer)
+            if (read < 0) break
+            if (read > 0) digest.update(buffer, 0, read)
+        }
+    }
+    return digest.digest().joinToString("") { "%02x".format(it) }
+}
+
+val prepareDjvuAar = tasks.register("prepareDjvuAar") {
+    outputs.file(djvuAarFile)
+    doLast {
+        val target = djvuAarFile.asFile
+        fun valid(): Boolean = target.isFile && runCatching { gitBlobSha1(target) == djvuAarGitBlobSha1 }.getOrDefault(false)
+
+        if (!valid()) {
+            target.parentFile.mkdirs()
+            val temp = java.io.File(target.parentFile, target.name + ".part")
+            temp.delete()
+            java.net.URI(djvuAarUrl).toURL().openStream().buffered().use { input ->
+                temp.outputStream().buffered().use { output -> input.copyTo(output) }
+            }
+            if (gitBlobSha1(temp) != djvuAarGitBlobSha1) {
+                temp.delete()
+                error("DjVuLibre AAR checksum mismatch; refusing to use an unexpected binary")
+            }
+            if (target.exists()) target.delete()
+            check(temp.renameTo(target)) { "Unable to place DjVuLibre AAR at ${target.absolutePath}" }
+        }
+    }
+}
 
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2026.06.01")
@@ -73,6 +118,13 @@ dependencies {
     implementation("androidx.documentfile:documentfile:1.1.0")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+
+    // Extended document/archive formats
+    implementation("com.github.junrar:junrar:8.1.1")
+    implementation("org.apache.commons:commons-compress:1.28.0")
+    implementation("org.tukaani:xz:1.10") // LZMA/LZMA2 backend used by most CB7 archives
+    implementation("com.github.chimenchen:jchmlib:v0.5.4")
+    implementation(files(djvuAarFile).builtBy(prepareDjvuAar))
 
     testImplementation("junit:junit:4.13.2")
     androidTestImplementation("androidx.test.ext:junit:1.3.0")

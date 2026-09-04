@@ -1,5 +1,18 @@
 # Changelog
 
+## 0.5.0
+
+- Extended import: FB2.ZIP/FB2.GZ, HTML/XHTML, Markdown, RTF, DOCX, ODT, DRM-free MOBI/AZW/AZW3, ZIP, CBZ/CBR/CB7, CHM and DjVu/DJV.
+- Native DjVu page rendering via a pinned DjVuLibre fork with Android 16 / 16 KB page-size support.
+- Embedded DjVu text layers are imported as hidden `DJVU_TEXT` blocks for search, TTS, quotes, notes and selectable «Текст страницы».
+- EPUB internal chapter links, redesigned navigation sheet and chapter-local page progress.
+- Full-screen image viewer with Save As support.
+- Reader bars can be toggled with a page tap; faster typography controls.
+- TTS global enable/disable plus explicit Stop action.
+- Material 3 polish for library cards, reader controls and navigation.
+- App version bumped to 0.5.0 / versionCode 5.
+
+
 ## 0.4.0
 
 ### Added

@@ -23,7 +23,7 @@ data class ParsedElement(
     val text: String = "",
     val resourcePath: String? = null
 ) {
-    enum class Kind { PARAGRAPH, IMAGE, FOOTNOTE, PDF_PAGE, PDF_TEXT }
+    enum class Kind { PARAGRAPH, IMAGE, FOOTNOTE, PDF_PAGE, PDF_TEXT, DJVU_PAGE, DJVU_TEXT, LINK }
 }
 
 data class ReaderBlock(
@@ -33,10 +33,10 @@ data class ReaderBlock(
     val paragraphIndex: Int = -1,
     val resourcePath: String? = null
 ) {
-    enum class Kind { CHAPTER, PARAGRAPH, IMAGE, FOOTNOTE, PDF_PAGE, PDF_TEXT }
+    enum class Kind { CHAPTER, PARAGRAPH, IMAGE, FOOTNOTE, PDF_PAGE, PDF_TEXT, DJVU_PAGE, DJVU_TEXT, LINK }
 
     val isSpeakable: Boolean
-        get() = kind == Kind.PARAGRAPH || kind == Kind.FOOTNOTE || kind == Kind.PDF_TEXT || kind == Kind.CHAPTER
+        get() = kind == Kind.PARAGRAPH || kind == Kind.FOOTNOTE || kind == Kind.PDF_TEXT || kind == Kind.DJVU_TEXT || kind == Kind.CHAPTER
 }
 
 data class ReaderPage(

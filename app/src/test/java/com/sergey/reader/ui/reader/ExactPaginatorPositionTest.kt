@@ -25,7 +25,7 @@ class ExactPaginatorPositionTest {
             ExactReaderPage(listOf(PageSlice(blockIndex = 4)))
         )
 
-        // Blocks 1 and 3 can be hidden PDF text layers that are not represented visually.
+        // Blocks 1 and 3 can be hidden PDF/DjVu text layers that are not represented visually.
         assertEquals(0, ExactPaginator.pageForPosition(pages, 1, 0))
         assertEquals(1, ExactPaginator.pageForPosition(pages, 3, 0))
     }

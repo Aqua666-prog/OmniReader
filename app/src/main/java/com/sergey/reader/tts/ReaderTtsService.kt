@@ -146,7 +146,7 @@ class ReaderTtsService : Service(), TextToSpeech.OnInitListener {
             val container = (application as ReaderApplication).container
             val book = withContext(Dispatchers.IO) { container.books.getBook(bookId) }
             val loaded = withContext(Dispatchers.IO) { container.books.loadBlocks(bookId) }
-            if (loaded.none { it.kind == ReaderBlock.Kind.PARAGRAPH || it.kind == ReaderBlock.Kind.FOOTNOTE || it.kind == ReaderBlock.Kind.PDF_TEXT }) {
+            if (loaded.none { it.kind == ReaderBlock.Kind.PARAGRAPH || it.kind == ReaderBlock.Kind.FOOTNOTE || it.kind == ReaderBlock.Kind.PDF_TEXT || it.kind == ReaderBlock.Kind.DJVU_TEXT }) {
                 ReaderTtsController.publish(TtsUiState(error = "В документе нет текстового слоя для озвучки"))
                 stopReading()
                 return@launch

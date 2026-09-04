@@ -59,7 +59,7 @@ class BookRepository(
                 chapter.elements.ifEmpty { chapter.paragraphs.map { ParsedElement(ParsedElement.Kind.PARAGRAPH, text = it) } }
             }
             val wordCount = elements
-                .filter { it.kind == ParsedElement.Kind.PARAGRAPH || it.kind == ParsedElement.Kind.FOOTNOTE || it.kind == ParsedElement.Kind.PDF_TEXT }
+                .filter { it.kind == ParsedElement.Kind.PARAGRAPH || it.kind == ParsedElement.Kind.FOOTNOTE || it.kind == ParsedElement.Kind.PDF_TEXT || it.kind == ParsedElement.Kind.DJVU_TEXT }
                 .sumOf { TextUtil.wordCount(it.text).toLong() }
             val totalBlocks = parsed.chapters.size + elements.size
 
@@ -108,18 +108,25 @@ class BookRepository(
                         sourceRef = chapter.sourceRef
                     )
                 })
+                val chapterTargets = parsed.chapters.mapIndexedNotNull { index, chapter ->
+                    chapter.sourceRef?.substringBefore('#')?.removePrefix("./")?.let { it to index }
+                }.toMap()
                 val rows = parsed.chapters.flatMapIndexed { chapterIndex, chapter ->
                     val chapterElements = chapter.elements.ifEmpty {
                         chapter.paragraphs.map { ParsedElement(ParsedElement.Kind.PARAGRAPH, text = it) }
                     }
                     chapterElements.mapIndexed { paragraphIndex, element ->
+                        val storedResourcePath = if (element.kind == ParsedElement.Kind.LINK) {
+                            val target = element.resourcePath?.substringBefore('#')?.removePrefix("./")
+                            chapterTargets[target]?.let { "chapter:$it" } ?: element.resourcePath
+                        } else element.resourcePath
                         ParagraphEntity(
                             bookId = bookId,
                             chapterIndex = chapterIndex,
                             paragraphIndex = paragraphIndex,
                             text = element.text,
                             kind = element.kind.name,
-                            resourcePath = element.resourcePath
+                            resourcePath = storedResourcePath
                         )
                     }
                 }
@@ -168,6 +175,9 @@ class BookRepository(
                         ParsedElement.Kind.FOOTNOTE -> ReaderBlock.Kind.FOOTNOTE
                         ParsedElement.Kind.PDF_PAGE -> ReaderBlock.Kind.PDF_PAGE
                         ParsedElement.Kind.PDF_TEXT -> ReaderBlock.Kind.PDF_TEXT
+                        ParsedElement.Kind.DJVU_PAGE -> ReaderBlock.Kind.DJVU_PAGE
+                        ParsedElement.Kind.DJVU_TEXT -> ReaderBlock.Kind.DJVU_TEXT
+                        ParsedElement.Kind.LINK -> ReaderBlock.Kind.LINK
                         else -> ReaderBlock.Kind.PARAGRAPH
                     }
                     add(ReaderBlock(kind, p.text, p.chapterIndex, p.paragraphIndex, p.resourcePath))

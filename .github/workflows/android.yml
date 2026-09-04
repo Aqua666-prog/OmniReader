@@ -32,6 +32,9 @@ jobs:
         with:
           gradle-version: '9.5.0'
 
+      - name: Fetch pinned DjVu backend
+        run: gradle prepareDjvuAar --stacktrace
+
       - name: Unit tests
         run: gradle testDebugUnitTest --stacktrace
 

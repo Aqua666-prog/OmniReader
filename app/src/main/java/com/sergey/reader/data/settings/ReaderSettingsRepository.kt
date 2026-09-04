@@ -28,6 +28,7 @@ data class ReaderSettings(
     val dictionaryUrlTemplate: String = DEFAULT_DICTIONARY_TEMPLATE,
     val webSearchUrlTemplate: String = DEFAULT_WEB_SEARCH_TEMPLATE,
     val contextMenuMode: ContextMenuMode = ContextMenuMode.EXTENDED,
+    val ttsEnabled: Boolean = true,
     val ttsRate: Float = 1.0f,
     val ttsPitch: Float = 1.0f,
     val fontPath: String? = null,
@@ -53,6 +54,7 @@ class ReaderSettingsRepository(private val context: Context) {
         val dictionaryUrl = stringPreferencesKey("dictionary_url_template")
         val webSearchUrl = stringPreferencesKey("web_search_url_template")
         val contextMenuMode = stringPreferencesKey("context_menu_mode")
+        val ttsEnabled = booleanPreferencesKey("tts_enabled")
         val ttsRate = floatPreferencesKey("tts_rate")
         val ttsPitch = floatPreferencesKey("tts_pitch")
         val fontPath = stringPreferencesKey("font_path")
@@ -72,6 +74,7 @@ class ReaderSettingsRepository(private val context: Context) {
             dictionaryUrlTemplate = p[Keys.dictionaryUrl] ?: ReaderSettings.DEFAULT_DICTIONARY_TEMPLATE,
             webSearchUrlTemplate = p[Keys.webSearchUrl] ?: ReaderSettings.DEFAULT_WEB_SEARCH_TEMPLATE,
             contextMenuMode = p[Keys.contextMenuMode]?.let { runCatching { ContextMenuMode.valueOf(it) }.getOrNull() } ?: ContextMenuMode.EXTENDED,
+            ttsEnabled = p[Keys.ttsEnabled] ?: true,
             ttsRate = p[Keys.ttsRate] ?: 1.0f,
             ttsPitch = p[Keys.ttsPitch] ?: 1.0f,
             fontPath = p[Keys.fontPath]?.takeIf { it.isNotBlank() },
@@ -84,6 +87,7 @@ class ReaderSettingsRepository(private val context: Context) {
     suspend fun setPadding(value: Float) { context.readerDataStore.edit { it[Keys.padding] = value.coerceIn(8f, 52f) } }
     suspend fun setTheme(value: ReaderThemePreset) { context.readerDataStore.edit { it[Keys.theme] = value.name } }
     suspend fun setJustify(value: Boolean) { context.readerDataStore.edit { it[Keys.justify] = value } }
+    suspend fun setShowControlsOnTap(value: Boolean) { context.readerDataStore.edit { it[Keys.controls] = value } }
     suspend fun setLibraryView(value: LibraryViewMode) { context.readerDataStore.edit { it[Keys.libraryView] = value.name } }
     suspend fun setFontPath(value: String?) {
         context.readerDataStore.edit {
@@ -106,6 +110,10 @@ class ReaderSettingsRepository(private val context: Context) {
 
     suspend fun setContextMenuMode(value: ContextMenuMode) {
         context.readerDataStore.edit { it[Keys.contextMenuMode] = value.name }
+    }
+
+    suspend fun setTtsEnabled(value: Boolean) {
+        context.readerDataStore.edit { it[Keys.ttsEnabled] = value }
     }
 
     suspend fun setTtsRate(value: Float) {

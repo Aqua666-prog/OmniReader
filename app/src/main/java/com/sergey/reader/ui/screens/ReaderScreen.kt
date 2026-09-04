@@ -4,6 +4,8 @@ import android.content.Intent
 import android.graphics.Typeface
 import android.net.Uri
 import android.widget.Toast
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -35,7 +37,9 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
 import androidx.compose.material.icons.filled.Bookmark
 import androidx.compose.material.icons.filled.BookmarkBorder
+import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.ContentCopy
+import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.FormatColorFill
 import androidx.compose.material.icons.filled.FormatListBulleted
 import androidx.compose.material.icons.filled.FormatQuote
@@ -49,6 +53,7 @@ import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.VolumeUp
+import androidx.compose.material.icons.filled.VolumeOff
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -99,6 +104,8 @@ import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextIndent
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import androidx.core.content.ContextCompat
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.sergey.reader.data.db.AnnotationEntity
@@ -119,9 +126,11 @@ import com.sergey.reader.ui.reader.ExactPaginator
 import com.sergey.reader.ui.reader.PaginationStyles
 import com.sergey.reader.util.TextActionLauncher
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.debounce
 import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.io.File
 
 private data class ReaderPalette(val background: Color, val foreground: Color, val secondary: Color)
@@ -146,26 +155,36 @@ private fun displayTtsRangeFor(
     blocks: List<ReaderBlock>,
     blockIndex: Int
 ): IntRange? {
+    val pageKind = blocks.getOrNull(blockIndex)?.kind
+    val hiddenKind = blocks.getOrNull(blockIndex + 1)?.kind
     val target = if (
-        blocks.getOrNull(blockIndex)?.kind == ReaderBlock.Kind.PDF_PAGE &&
-        blocks.getOrNull(blockIndex + 1)?.kind == ReaderBlock.Kind.PDF_TEXT
+        (pageKind == ReaderBlock.Kind.PDF_PAGE && hiddenKind == ReaderBlock.Kind.PDF_TEXT) ||
+        (pageKind == ReaderBlock.Kind.DJVU_PAGE && hiddenKind == ReaderBlock.Kind.DJVU_TEXT)
     ) blockIndex + 1 else blockIndex
     return ttsRangeFor(state, currentBookId, target)
 }
 
-private fun pdfTextLayerFor(
+private fun pageTextLayerFor(
     blocks: List<ReaderBlock>,
     pageBlockIndex: Int,
     annotationsByBlock: Map<Int, List<AnnotationEntity>>
-): PdfTextLayerPayload? {
-    if (blocks.getOrNull(pageBlockIndex)?.kind != ReaderBlock.Kind.PDF_PAGE) return null
+): PageTextLayerPayload? {
+    val pageKind = blocks.getOrNull(pageBlockIndex)?.kind ?: return null
+    val expectedTextKind = when (pageKind) {
+        ReaderBlock.Kind.PDF_PAGE -> ReaderBlock.Kind.PDF_TEXT
+        ReaderBlock.Kind.DJVU_PAGE -> ReaderBlock.Kind.DJVU_TEXT
+        else -> return null
+    }
     val textIndex = pageBlockIndex + 1
-    val textBlock = blocks.getOrNull(textIndex)?.takeIf { it.kind == ReaderBlock.Kind.PDF_TEXT } ?: return null
-    return PdfTextLayerPayload(textIndex, textBlock, annotationsByBlock[textIndex].orEmpty())
+    val textBlock = blocks.getOrNull(textIndex)?.takeIf { it.kind == expectedTextKind } ?: return null
+    return PageTextLayerPayload(textIndex, textBlock, annotationsByBlock[textIndex].orEmpty())
 }
 
 private fun visibleBlockIndex(blocks: List<ReaderBlock>, index: Int): Int {
-    if (blocks.getOrNull(index)?.kind == ReaderBlock.Kind.PDF_TEXT && blocks.getOrNull(index - 1)?.kind == ReaderBlock.Kind.PDF_PAGE) {
+    val hidden = blocks.getOrNull(index)?.kind
+    val visual = blocks.getOrNull(index - 1)?.kind
+    if ((hidden == ReaderBlock.Kind.PDF_TEXT && visual == ReaderBlock.Kind.PDF_PAGE) ||
+        (hidden == ReaderBlock.Kind.DJVU_TEXT && visual == ReaderBlock.Kind.DJVU_PAGE)) {
         return index - 1
     }
     return index.coerceIn(0, blocks.lastIndex.coerceAtLeast(0))
@@ -274,6 +293,14 @@ fun ReaderScreen(
         ttsState.error?.let { Toast.makeText(context, it, Toast.LENGTH_SHORT).show() }
     }
 
+    LaunchedEffect(settings.ttsEnabled, ttsState.active, ttsState.bookId, book?.id) {
+        if (!settings.ttsEnabled && ttsState.active && ttsState.bookId == book?.id) {
+            context.startService(Intent(context, ReaderTtsService::class.java).apply {
+                action = ReaderTtsService.ACTION_STOP
+            })
+        }
+    }
+
     LaunchedEffect(book?.id, blocks.size, initialBlock) {
         val b = book ?: return@LaunchedEffect
         if (!restored && blocks.isNotEmpty()) {
@@ -337,7 +364,7 @@ fun ReaderScreen(
         if (settings.readerMode == ReaderMode.VERTICAL) {
             if (listState.firstVisibleItemIndex != target) listState.animateScrollToItem(target)
         } else if (pages.isNotEmpty()) {
-            val targetPage = if (blocks[sourceBlock].kind == ReaderBlock.Kind.PDF_TEXT) {
+            val targetPage = if ((blocks[sourceBlock].kind == ReaderBlock.Kind.PDF_TEXT || blocks[sourceBlock].kind == ReaderBlock.Kind.DJVU_TEXT)) {
                 ExactPaginator.pageForBlock(pages, target)
             } else {
                 ExactPaginator.pageForPosition(pages, sourceBlock, offset)
@@ -353,10 +380,35 @@ fun ReaderScreen(
             ?.text.orEmpty()
     }
     val annotationsByBlock = remember(annotations) { annotations.groupBy { it.blockIndex } }
-    val visualBlockIndices = remember(blocks) { blocks.indices.filter { blocks[it].kind != ReaderBlock.Kind.PDF_TEXT } }
+    val visualBlockIndices = remember(blocks) { blocks.indices.filter { blocks[it].kind != ReaderBlock.Kind.PDF_TEXT && blocks[it].kind != ReaderBlock.Kind.DJVU_TEXT } }
     val currentVisualPosition = remember(currentIndex, visualBlockIndices) {
         visualBlockIndices.indexOf(currentIndex).let { if (it >= 0) it else 0 }
     }
+
+    fun goToInternalLink(target: String?) {
+        val chapterIndex = target?.removePrefix("chapter:")?.toIntOrNull() ?: return
+        val blockIndex = blocks.indexOfFirst {
+            it.kind == ReaderBlock.Kind.CHAPTER && it.chapterIndex == chapterIndex
+        }
+        if (blockIndex < 0) return
+        selection = null
+        currentIndex = blockIndex
+        currentOffset = 0
+        if (settings.readerMode == ReaderMode.VERTICAL) {
+            scope.launch { listState.scrollToItem(blockIndex) }
+        } else if (pages.isNotEmpty()) {
+            scope.launch { pagerState.scrollToPage(ExactPaginator.pageForBlock(pages, blockIndex)) }
+        }
+        vm.savePosition(blockIndex, 0)
+    }
+
+    val activeChapterIndex = blocks.getOrNull(currentIndex)?.chapterIndex ?: 0
+    val chapterPageIndices = remember(pages, blocks, activeChapterIndex) {
+        pages.indices.filter { pageIndex ->
+            pages[pageIndex].slices.any { slice -> blocks.getOrNull(slice.blockIndex)?.chapterIndex == activeChapterIndex }
+        }
+    }
+    val chapterPagePosition = chapterPageIndices.indexOf(pagerState.currentPage).let { if (it >= 0) it + 1 else 1 }
 
     Box(Modifier.fillMaxSize().background(palette.background)) {
         if (blocks.isEmpty()) {
@@ -370,7 +422,7 @@ fun ReaderScreen(
                     .fillMaxSize()
                     .background(palette.background)
                     .pointerInput(selection) {
-                        if (selection == null) detectTapGestures(onTap = { controlsVisible = !controlsVisible })
+                        if (selection == null && settings.showControlsOnTap) detectTapGestures(onTap = { controlsVisible = !controlsVisible })
                     },
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
                     start = settings.horizontalPaddingDp.dp,
@@ -393,7 +445,8 @@ fun ReaderScreen(
                         fontFamily = readerFont,
                         clearSelectionSignal = selectionEpoch,
                         ttsRange = displayTtsRangeFor(ttsState, book?.id, blocks, index),
-                        pdfTextLayer = pdfTextLayerFor(blocks, index, annotationsByBlock),
+                        pageTextLayer = pageTextLayerFor(blocks, index, annotationsByBlock),
+                        onInternalLink = ::goToInternalLink,
                         onSelectionChanged = { payload ->
                             selection = payload
                             if (payload != null) controlsVisible = false
@@ -417,11 +470,11 @@ fun ReaderScreen(
                             .padding(
                                 start = settings.horizontalPaddingDp.dp,
                                 end = settings.horizontalPaddingDp.dp,
-                                top = 86.dp,
-                                bottom = 118.dp
+                                top = if (controlsVisible) 86.dp else 18.dp,
+                                bottom = if (controlsVisible) 118.dp else 24.dp
                             )
                             .pointerInput(selection, pageIndex) {
-                                if (selection == null) detectTapGestures(onTap = { controlsVisible = !controlsVisible })
+                                if (selection == null && settings.showControlsOnTap) detectTapGestures(onTap = { controlsVisible = !controlsVisible })
                             }
                     ) {
                         page.slices.forEach { slice ->
@@ -439,7 +492,8 @@ fun ReaderScreen(
                                     textStartOffset = slice.startOffset.coerceIn(0, block.text.length),
                                     textEndOffsetExclusive = end,
                                     ttsRange = displayTtsRangeFor(ttsState, book?.id, blocks, slice.blockIndex),
-                                    pdfTextLayer = pdfTextLayerFor(blocks, slice.blockIndex, annotationsByBlock),
+                                    pageTextLayer = pageTextLayerFor(blocks, slice.blockIndex, annotationsByBlock),
+                                    onInternalLink = ::goToInternalLink,
                                     onSelectionChanged = { payload ->
                                         selection = payload
                                         if (payload != null) controlsVisible = false
@@ -452,15 +506,17 @@ fun ReaderScreen(
             }
         }
 
-        IconButton(
-            onClick = { vm.toggleBookmark(currentIndex) },
-            modifier = Modifier.align(Alignment.TopEnd).padding(top = if (controlsVisible) 74.dp else 8.dp, end = 8.dp)
-        ) {
-            Icon(
-                if (isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
-                contentDescription = "Закладка",
-                tint = if (isBookmarked) MaterialTheme.colorScheme.primary else palette.secondary
-            )
+        if (controlsVisible || selection != null) {
+            IconButton(
+                onClick = { vm.toggleBookmark(currentIndex) },
+                modifier = Modifier.align(Alignment.TopEnd).padding(top = if (controlsVisible) 74.dp else 8.dp, end = 8.dp)
+            ) {
+                Icon(
+                    if (isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder,
+                    contentDescription = "Закладка",
+                    tint = if (isBookmarked) MaterialTheme.colorScheme.primary else palette.secondary
+                )
+            }
         }
 
         if (controlsVisible && selection == null) {
@@ -476,39 +532,52 @@ fun ReaderScreen(
                         IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Назад") }
                     },
                     actions = {
-                        IconButton(onClick = {
-                            val currentBookId = book?.id ?: return@IconButton
-                            val intent = Intent(context, ReaderTtsService::class.java)
-                            if (ttsState.active && ttsState.bookId == currentBookId) {
-                                intent.action = ReaderTtsService.ACTION_TOGGLE
-                                context.startService(intent)
-                            } else {
-                                intent.action = ReaderTtsService.ACTION_START
-                                intent.putExtra(ReaderTtsService.EXTRA_BOOK_ID, currentBookId)
-                                intent.putExtra(ReaderTtsService.EXTRA_BLOCK_INDEX, currentIndex)
-                                intent.putExtra(ReaderTtsService.EXTRA_RATE, settings.ttsRate)
-                                intent.putExtra(ReaderTtsService.EXTRA_PITCH, settings.ttsPitch)
-                                ContextCompat.startForegroundService(context, intent)
-                            }
-                        }) {
-                            Icon(
-                                Icons.Default.VolumeUp,
-                                contentDescription = if (ttsState.active && ttsState.bookId == book?.id) "Пауза / продолжить озвучку" else "Озвучка",
-                                tint = if (ttsState.active && ttsState.bookId == book?.id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        if (ttsState.active && ttsState.bookId == book?.id) {
-                            IconButton(onClick = { sleepTimerVisible = true }) {
+                        if (settings.ttsEnabled) {
+                            IconButton(onClick = {
+                                val currentBookId = book?.id ?: return@IconButton
+                                val intent = Intent(context, ReaderTtsService::class.java)
+                                if (ttsState.active && ttsState.bookId == currentBookId) {
+                                    intent.action = ReaderTtsService.ACTION_TOGGLE
+                                    context.startService(intent)
+                                } else {
+                                    intent.action = ReaderTtsService.ACTION_START
+                                    intent.putExtra(ReaderTtsService.EXTRA_BOOK_ID, currentBookId)
+                                    intent.putExtra(ReaderTtsService.EXTRA_BLOCK_INDEX, currentIndex)
+                                    intent.putExtra(ReaderTtsService.EXTRA_RATE, settings.ttsRate)
+                                    intent.putExtra(ReaderTtsService.EXTRA_PITCH, settings.ttsPitch)
+                                    ContextCompat.startForegroundService(context, intent)
+                                }
+                            }) {
                                 Icon(
-                                    Icons.Default.Timer,
-                                    contentDescription = "Таймер сна",
-                                    tint = if (ttsState.sleepTimerActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    Icons.Default.VolumeUp,
+                                    contentDescription = if (ttsState.active && ttsState.bookId == book?.id) "Пауза / продолжить озвучку" else "Озвучка",
+                                    tint = if (ttsState.active && ttsState.bookId == book?.id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                                 )
+                            }
+                            if (ttsState.active && ttsState.bookId == book?.id) {
+                                IconButton(onClick = {
+                                    context.startService(Intent(context, ReaderTtsService::class.java).apply {
+                                        action = ReaderTtsService.ACTION_STOP
+                                    })
+                                }) {
+                                    Icon(Icons.Default.VolumeOff, contentDescription = "Остановить озвучку")
+                                }
+                                IconButton(onClick = { sleepTimerVisible = true }) {
+                                    Icon(
+                                        Icons.Default.Timer,
+                                        contentDescription = "Таймер сна",
+                                        tint = if (ttsState.sleepTimerActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
                             }
                         }
                         IconButton(
                             onClick = { searchVisible = true },
-                            enabled = book?.format != "PDF" || blocks.any { it.kind == ReaderBlock.Kind.PDF_TEXT }
+                            enabled = when (book?.format) {
+                                "PDF" -> blocks.any { it.kind == ReaderBlock.Kind.PDF_TEXT }
+                                "DJVU", "DJV" -> blocks.any { it.kind == ReaderBlock.Kind.DJVU_TEXT }
+                                else -> true
+                            }
                         ) {
                             Icon(Icons.Default.Search, contentDescription = "Поиск")
                         }
@@ -545,6 +614,9 @@ fun ReaderScreen(
                 PagedBottomBar(
                     currentPage = pagerState.currentPage.coerceIn(0, pages.lastIndex.coerceAtLeast(0)),
                     pageCount = pages.size,
+                    chapterTitle = currentChapter,
+                    chapterPage = chapterPagePosition,
+                    chapterPageCount = chapterPageIndices.size.coerceAtLeast(1),
                     onSeek = { page ->
                         val safe = page.coerceIn(0, pages.lastIndex)
                         val first = pages[safe].slices.first()
@@ -608,6 +680,7 @@ fun ReaderScreen(
     if (navigationVisible) {
         NavigationDialog(
             blocks = blocks,
+            currentIndex = currentIndex,
             bookmarks = bookmarks.map { it.blockIndex },
             annotations = annotations,
             onDismiss = { navigationVisible = false },
@@ -633,7 +706,7 @@ fun ReaderScreen(
             onDismiss = { vm.clearSearch(); searchVisible = false },
             onGo = { chapter, paragraph, matchOffset ->
                 val index = blocks.indexOfFirst {
-                    (it.kind == ReaderBlock.Kind.PARAGRAPH || it.kind == ReaderBlock.Kind.FOOTNOTE || it.kind == ReaderBlock.Kind.PDF_TEXT) &&
+                    (it.kind == ReaderBlock.Kind.PARAGRAPH || it.kind == ReaderBlock.Kind.FOOTNOTE || it.kind == ReaderBlock.Kind.PDF_TEXT || it.kind == ReaderBlock.Kind.DJVU_TEXT) &&
                         it.chapterIndex == chapter && it.paragraphIndex == paragraph
                 }
                 if (index >= 0) {
@@ -643,7 +716,7 @@ fun ReaderScreen(
                     if (settings.readerMode == ReaderMode.VERTICAL) {
                         scope.launch { listState.scrollToItem(target) }
                     } else if (pages.isNotEmpty()) {
-                        val targetPage = if (blocks[index].kind == ReaderBlock.Kind.PDF_TEXT) {
+                        val targetPage = if ((blocks[index].kind == ReaderBlock.Kind.PDF_TEXT || blocks[index].kind == ReaderBlock.Kind.DJVU_TEXT)) {
                             ExactPaginator.pageForBlock(pages, target)
                         } else {
                             ExactPaginator.pageForPosition(pages, index, currentOffset)
@@ -731,7 +804,7 @@ fun ReaderScreen(
 
 }
 
-private data class PdfTextLayerPayload(
+private data class PageTextLayerPayload(
     val blockIndex: Int,
     val block: ReaderBlock,
     val annotations: List<AnnotationEntity>
@@ -750,7 +823,8 @@ private fun ReaderBlockContent(
     textStartOffset: Int = 0,
     textEndOffsetExclusive: Int = block.text.length,
     ttsRange: IntRange? = null,
-    pdfTextLayer: PdfTextLayerPayload? = null,
+    pageTextLayer: PageTextLayerPayload? = null,
+    onInternalLink: (String?) -> Unit,
     onSelectionChanged: (TextSelection?) -> Unit
 ) {
     val start = textStartOffset.coerceIn(0, block.text.length)
@@ -782,19 +856,42 @@ private fun ReaderBlockContent(
             onSelectionChanged = onSelectionChanged
         )
 
+        ReaderBlock.Kind.LINK -> Text(
+            text = block.text,
+            color = MaterialTheme.colorScheme.primary,
+            fontFamily = fontFamily,
+            fontSize = settings.fontSizeSp.sp,
+            lineHeight = (settings.fontSizeSp * settings.lineHeight).sp,
+            fontWeight = FontWeight.Medium,
+            modifier = Modifier
+                .fillMaxWidth()
+                .clickable { onInternalLink(block.resourcePath) }
+                .padding(vertical = 7.dp, horizontal = 4.dp)
+        )
         ReaderBlock.Kind.IMAGE -> EpubImageBlock(block.resourcePath, palette)
         ReaderBlock.Kind.PDF_PAGE -> PdfPageBlock(
             bookUri = bookUri,
             pageRef = block.resourcePath,
             palette = palette,
-            textLayer = pdfTextLayer,
+            textLayer = pageTextLayer,
             settings = settings,
             fontFamily = fontFamily,
             clearSelectionSignal = clearSelectionSignal,
-            ttsRange = pdfTextLayer?.let { ttsRange },
+            ttsRange = pageTextLayer?.let { ttsRange },
             onSelectionChanged = onSelectionChanged
         )
-        ReaderBlock.Kind.PDF_TEXT -> Unit // hidden layer used by PDF search/TTS/selection sheet
+        ReaderBlock.Kind.PDF_TEXT, ReaderBlock.Kind.DJVU_TEXT -> Unit // hidden layer used by search/TTS/selection sheet
+        ReaderBlock.Kind.DJVU_PAGE -> DjvuPageBlock(
+            bookUri = bookUri,
+            pageRef = block.resourcePath,
+            palette = palette,
+            textLayer = pageTextLayer,
+            settings = settings,
+            fontFamily = fontFamily,
+            clearSelectionSignal = clearSelectionSignal,
+            ttsRange = pageTextLayer?.let { ttsRange },
+            onSelectionChanged = onSelectionChanged
+        )
     }
 }
 
@@ -891,6 +988,37 @@ private fun SelectableParagraph(
 @Composable
 private fun EpubImageBlock(path: String?, palette: ReaderPalette) {
     if (!BookResourceRenderer.fileExists(path)) return
+    val context = LocalContext.current
+    val scope = rememberCoroutineScope()
+    var fullScreen by remember(path) { mutableStateOf(false) }
+    var pendingSource by remember { mutableStateOf<String?>(null) }
+    val ext = path?.substringAfterLast('.', "jpg")?.lowercase()?.take(8) ?: "jpg"
+    val mime = when (ext) {
+        "png" -> "image/png"
+        "webp" -> "image/webp"
+        "gif" -> "image/gif"
+        "bmp" -> "image/bmp"
+        "avif" -> "image/avif"
+        else -> "image/jpeg"
+    }
+    val saveImage = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument(mime)) { uri ->
+        val source = pendingSource
+        if (uri != null && source != null) {
+            scope.launch {
+                val ok = withContext(Dispatchers.IO) {
+                    runCatching {
+                        File(source).inputStream().use { input ->
+                            context.contentResolver.openOutputStream(uri, "w")?.use { output -> input.copyTo(output) }
+                                ?: error("Не удалось открыть файл назначения")
+                        }
+                    }.isSuccess
+                }
+                Toast.makeText(context, if (ok) "Иллюстрация сохранена" else "Не удалось сохранить иллюстрацию", Toast.LENGTH_SHORT).show()
+            }
+        }
+        pendingSource = null
+    }
+
     val bitmap by produceState<android.graphics.Bitmap?>(initialValue = null, key1 = path) {
         value = path?.let { BookResourceRenderer.loadImage(it) }
     }
@@ -899,10 +1027,45 @@ private fun EpubImageBlock(path: String?, palette: ReaderPalette) {
             Image(
                 bitmap = it.asImageBitmap(),
                 contentDescription = "Иллюстрация",
-                modifier = Modifier.fillMaxWidth().widthIn(max = 760.dp),
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .widthIn(max = 760.dp)
+                    .clickable { fullScreen = true },
                 contentScale = ContentScale.Fit
             )
         } ?: Text("Иллюстрация…", color = palette.secondary)
+    }
+
+    if (fullScreen && bitmap != null) {
+        Dialog(
+            onDismissRequest = { fullScreen = false },
+            properties = DialogProperties(usePlatformDefaultWidth = false)
+        ) {
+            Surface(Modifier.fillMaxSize(), color = Color.Black.copy(alpha = 0.96f)) {
+                Box(Modifier.fillMaxSize()) {
+                    Image(
+                        bitmap = bitmap!!.asImageBitmap(),
+                        contentDescription = "Иллюстрация — полный экран",
+                        modifier = Modifier.fillMaxSize().padding(14.dp),
+                        contentScale = ContentScale.Fit
+                    )
+                    Row(
+                        Modifier.align(Alignment.TopEnd).padding(12.dp),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        IconButton(onClick = {
+                            pendingSource = path
+                            saveImage.launch("illustration_${System.currentTimeMillis()}.$ext")
+                        }) {
+                            Icon(Icons.Default.Download, contentDescription = "Сохранить иллюстрацию", tint = Color.White)
+                        }
+                        IconButton(onClick = { fullScreen = false }) {
+                            Icon(Icons.Default.Close, contentDescription = "Закрыть", tint = Color.White)
+                        }
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -912,7 +1075,7 @@ private fun PdfPageBlock(
     bookUri: String?,
     pageRef: String?,
     palette: ReaderPalette,
-    textLayer: PdfTextLayerPayload?,
+    textLayer: PageTextLayerPayload?,
     settings: ReaderSettings,
     fontFamily: FontFamily,
     clearSelectionSignal: Int,
@@ -962,6 +1125,83 @@ private fun PdfPageBlock(
                     .padding(horizontal = 22.dp, vertical = 10.dp)
             ) {
                 Text("Страница ${pageIndex + 1} · текстовый слой", style = MaterialTheme.typography.titleLarge)
+                Spacer(Modifier.height(12.dp))
+                SelectableParagraph(
+                    blockIndex = textLayer.blockIndex,
+                    block = textLayer.block,
+                    savedAnnotations = textLayer.annotations,
+                    settings = settings,
+                    palette = palette,
+                    fontFamily = fontFamily,
+                    isFootnote = false,
+                    clearSelectionSignal = clearSelectionSignal,
+                    ttsRange = ttsRange,
+                    onSelectionChanged = { payload ->
+                        onSelectionChanged(payload)
+                        if (payload != null) showTextLayer = false
+                    }
+                )
+                Spacer(Modifier.height(24.dp))
+            }
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun DjvuPageBlock(
+    bookUri: String?,
+    pageRef: String?,
+    palette: ReaderPalette,
+    textLayer: PageTextLayerPayload?,
+    settings: ReaderSettings,
+    fontFamily: FontFamily,
+    clearSelectionSignal: Int,
+    ttsRange: IntRange?,
+    onSelectionChanged: (TextSelection?) -> Unit
+) {
+    val context = LocalContext.current
+    val density = LocalDensity.current
+    val pageIndex = pageRef?.toIntOrNull() ?: return
+    val uri = remember(bookUri) { bookUri?.let(Uri::parse) } ?: return
+    var showTextLayer by remember(pageIndex) { mutableStateOf(false) }
+
+    Column(Modifier.fillMaxWidth()) {
+        BoxWithConstraints(Modifier.fillMaxWidth().padding(vertical = 8.dp)) {
+            val widthPx = with(density) { maxWidth.toPx().toInt() }.coerceAtLeast(480)
+            val bitmap by produceState<android.graphics.Bitmap?>(null, uri, pageIndex, widthPx) {
+                value = BookResourceRenderer.renderDjvuPage(context, uri, pageIndex, widthPx)
+            }
+            Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                bitmap?.let {
+                    Image(
+                        bitmap = it.asImageBitmap(),
+                        contentDescription = "DjVu · страница ${pageIndex + 1}",
+                        modifier = Modifier.fillMaxWidth(),
+                        contentScale = ContentScale.Fit
+                    )
+                } ?: Text("DjVu · страница ${pageIndex + 1}…", color = palette.secondary)
+            }
+        }
+        if (textLayer != null && textLayer.block.text.isNotBlank()) {
+            TextButton(onClick = { showTextLayer = true }, modifier = Modifier.align(Alignment.CenterHorizontally)) {
+                Icon(Icons.Default.MenuBook, contentDescription = null)
+                Spacer(Modifier.size(6.dp))
+                Text("Текст страницы")
+            }
+        }
+    }
+
+    if (showTextLayer && textLayer != null) {
+        ModalBottomSheet(onDismissRequest = { showTextLayer = false }) {
+            Column(
+                Modifier
+                    .fillMaxWidth()
+                    .fillMaxHeight(0.82f)
+                    .verticalScroll(rememberScrollState())
+                    .padding(horizontal = 22.dp, vertical = 10.dp)
+            ) {
+                Text("DjVu · страница ${pageIndex + 1} · текстовый слой", style = MaterialTheme.typography.titleLarge)
                 Spacer(Modifier.height(12.dp))
                 SelectableParagraph(
                     blockIndex = textLayer.blockIndex,
@@ -1101,13 +1341,23 @@ private fun ReaderBottomBar(currentIndex: Int, total: Int, onSeek: (Int) -> Unit
 }
 
 @Composable
-private fun PagedBottomBar(currentPage: Int, pageCount: Int, onSeek: (Int) -> Unit, modifier: Modifier = Modifier) {
+private fun PagedBottomBar(
+    currentPage: Int,
+    pageCount: Int,
+    chapterTitle: String,
+    chapterPage: Int,
+    chapterPageCount: Int,
+    onSeek: (Int) -> Unit,
+    modifier: Modifier = Modifier
+) {
     if (pageCount <= 0) return
     var slider by remember(currentPage, pageCount) { mutableFloatStateOf(currentPage.toFloat()) }
     Surface(modifier = modifier.fillMaxWidth().navigationBarsPadding(), tonalElevation = 5.dp) {
         Column(Modifier.padding(horizontal = 18.dp, vertical = 10.dp), horizontalAlignment = Alignment.CenterHorizontally) {
             val percent = if (pageCount <= 1) 0 else currentPage * 100 / (pageCount - 1)
-            Text("Страница ${currentPage + 1} из $pageCount · $percent%", style = MaterialTheme.typography.titleMedium)
+            val compactChapter = chapterTitle.ifBlank { "Глава" }.take(48)
+            Text("$compactChapter · $chapterPage/$chapterPageCount", style = MaterialTheme.typography.titleMedium, maxLines = 1)
+            Text("Книга: ${currentPage + 1}/$pageCount · $percent%", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Slider(
                 value = slider.coerceIn(0f, (pageCount - 1).toFloat()),
                 onValueChange = { slider = it },
@@ -1194,14 +1444,32 @@ private fun ReaderSettingsSheet(
             }
 
             Spacer(Modifier.height(18.dp))
-            Text("Размер шрифта: ${settings.fontSizeSp.toInt()}")
-            Slider(value = settings.fontSizeSp, onValueChange = vm::setFontSize, valueRange = 14f..42f)
-
-            Text("Межстрочный интервал: ${"%.2f".format(settings.lineHeight)}")
-            Slider(value = settings.lineHeight, onValueChange = vm::setLineHeight, valueRange = 1f..2f)
-
-            Text("Поля: ${settings.horizontalPaddingDp.toInt()} dp")
-            Slider(value = settings.horizontalPaddingDp, onValueChange = vm::setPadding, valueRange = 8f..52f)
+            ReaderValueControl(
+                title = "Размер текста",
+                valueLabel = "${settings.fontSizeSp.toInt()} sp",
+                value = settings.fontSizeSp,
+                range = 14f..42f,
+                step = 1f,
+                onChange = vm::setFontSize
+            )
+            Spacer(Modifier.height(10.dp))
+            ReaderValueControl(
+                title = "Межстрочный интервал",
+                valueLabel = "${"%.2f".format(settings.lineHeight)}×",
+                value = settings.lineHeight,
+                range = 1f..2f,
+                step = 0.05f,
+                onChange = vm::setLineHeight
+            )
+            Spacer(Modifier.height(10.dp))
+            ReaderValueControl(
+                title = "Поля страницы",
+                valueLabel = "${settings.horizontalPaddingDp.toInt()} dp",
+                value = settings.horizontalPaddingDp,
+                range = 8f..52f,
+                step = 2f,
+                onChange = vm::setPadding
+            )
 
             Spacer(Modifier.height(8.dp))
             Text("Цветовая схема", style = MaterialTheme.typography.titleMedium)
@@ -1218,63 +1486,111 @@ private fun ReaderSettingsSheet(
                 Text("Выравнивать по ширине")
                 Switch(checked = settings.justify, onCheckedChange = vm::setJustify)
             }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Column(Modifier.weight(1f)) {
+                    Text("Скрывать панели тапом")
+                    Text("Тап по центру страницы включает режим без отвлекающих панелей", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = settings.showControlsOnTap, onCheckedChange = vm::setShowControlsOnTap)
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Column(Modifier.weight(1f)) {
+                    Text("Аудиочтение")
+                    Text("Выключение сразу останавливает текущую озвучку", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                }
+                Switch(checked = settings.ttsEnabled, onCheckedChange = vm::setTtsEnabled)
+            }
         }
     }
 }
 
 @Composable
+private fun ReaderValueControl(
+    title: String,
+    valueLabel: String,
+    value: Float,
+    range: ClosedFloatingPointRange<Float>,
+    step: Float,
+    onChange: (Float) -> Unit
+) {
+    Surface(shape = MaterialTheme.shapes.large, tonalElevation = 1.dp) {
+        Column(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 10.dp)) {
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
+                Column {
+                    Text(title, style = MaterialTheme.typography.titleSmall)
+                    Text(valueLabel, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.primary)
+                }
+                Row {
+                    TextButton(onClick = { onChange((value - step).coerceAtLeast(range.start)) }) { Text("−", style = MaterialTheme.typography.titleLarge) }
+                    TextButton(onClick = { onChange((value + step).coerceAtMost(range.endInclusive)) }) { Text("+", style = MaterialTheme.typography.titleLarge) }
+                }
+            }
+            Slider(value = value.coerceIn(range.start, range.endInclusive), onValueChange = onChange, valueRange = range)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
 private fun NavigationDialog(
     blocks: List<ReaderBlock>,
+    currentIndex: Int,
     bookmarks: List<Int>,
     annotations: List<AnnotationEntity>,
     onDismiss: () -> Unit,
     onGo: (Int) -> Unit
 ) {
     var tab by remember { mutableIntStateOf(0) }
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text(when (tab) { 0 -> "Оглавление"; 1 -> "Закладки"; else -> "Цитаты" }) },
-        text = {
-            Column(Modifier.fillMaxWidth()) {
-                Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    FilterChip(selected = tab == 0, onClick = { tab = 0 }, label = { Text("Оглавление") })
-                    FilterChip(selected = tab == 1, onClick = { tab = 1 }, label = { Text("Закладки") })
-                    FilterChip(selected = tab == 2, onClick = { tab = 2 }, label = { Text("Цитаты") })
-                }
-                Spacer(Modifier.height(8.dp))
-                LazyColumn(Modifier.height(420.dp)) {
-                    when (tab) {
-                        0 -> {
-                            val chapters = blocks.withIndex().filter { it.value.kind == ReaderBlock.Kind.CHAPTER }
-                            itemsIndexed(chapters) { _, indexed ->
-                                TextButton(onClick = { onGo(indexed.index) }, modifier = Modifier.fillMaxWidth()) {
-                                    Text(indexed.value.text, modifier = Modifier.fillMaxWidth())
+    val chapters = remember(blocks) { blocks.withIndex().filter { it.value.kind == ReaderBlock.Kind.CHAPTER } }
+    val activeChapter = blocks.getOrNull(currentIndex)?.chapterIndex ?: 0
+    ModalBottomSheet(onDismissRequest = onDismiss) {
+        Column(Modifier.fillMaxWidth().fillMaxHeight(0.90f).padding(horizontal = 18.dp)) {
+            Text("Навигация по книге", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(10.dp))
+            Row(Modifier.horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                FilterChip(selected = tab == 0, onClick = { tab = 0 }, label = { Text("Оглавление · ${chapters.size}") })
+                FilterChip(selected = tab == 1, onClick = { tab = 1 }, label = { Text("Закладки · ${bookmarks.size}") })
+                FilterChip(selected = tab == 2, onClick = { tab = 2 }, label = { Text("Цитаты") })
+            }
+            Spacer(Modifier.height(10.dp))
+            LazyColumn(Modifier.fillMaxWidth().weight(1f)) {
+                when (tab) {
+                    0 -> itemsIndexed(chapters) { number, indexed ->
+                        val selected = indexed.value.chapterIndex == activeChapter
+                        Surface(
+                            modifier = Modifier.fillMaxWidth().padding(vertical = 3.dp).clickable { onGo(indexed.index) },
+                            shape = MaterialTheme.shapes.large,
+                            color = if (selected) MaterialTheme.colorScheme.primaryContainer else MaterialTheme.colorScheme.surface
+                        ) {
+                            Row(Modifier.fillMaxWidth().padding(horizontal = 14.dp, vertical = 13.dp), verticalAlignment = Alignment.CenterVertically) {
+                                Surface(shape = MaterialTheme.shapes.medium, color = if (selected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surfaceVariant) {
+                                    Text("${number + 1}", modifier = Modifier.padding(horizontal = 9.dp, vertical = 5.dp), color = if (selected) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.onSurfaceVariant)
                                 }
-                                HorizontalDivider()
+                                Spacer(Modifier.size(12.dp))
+                                Text(indexed.value.text, modifier = Modifier.weight(1f), style = MaterialTheme.typography.bodyLarge, fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal)
                             }
                         }
-                        1 -> itemsIndexed(bookmarks) { _, blockIndex ->
-                            val preview = blocks.getOrNull(blockIndex)?.text.orEmpty().take(90)
-                            TextButton(onClick = { onGo(blockIndex) }, modifier = Modifier.fillMaxWidth()) {
-                                Text("${blockIndex + 1}. $preview", modifier = Modifier.fillMaxWidth())
-                            }
-                            HorizontalDivider()
+                    }
+                    1 -> itemsIndexed(bookmarks) { _, blockIndex ->
+                        val preview = blocks.getOrNull(blockIndex)?.text.orEmpty().take(120)
+                        Surface(Modifier.fillMaxWidth().padding(vertical = 3.dp).clickable { onGo(blockIndex) }, shape = MaterialTheme.shapes.large, tonalElevation = 1.dp) {
+                            Text(preview.ifBlank { "Закладка" }, modifier = Modifier.padding(14.dp), maxLines = 4)
                         }
-                        else -> {
-                            val quotes = annotations.filter { it.type == AnnotationType.QUOTE.name || it.type == AnnotationType.HIGHLIGHT.name }
-                            itemsIndexed(quotes) { _, item ->
-                                TextButton(onClick = { onGo(item.blockIndex) }, modifier = Modifier.fillMaxWidth()) {
-                                    Text(item.selectedText.take(150), modifier = Modifier.fillMaxWidth(), maxLines = 4)
-                                }
-                                HorizontalDivider()
+                    }
+                    else -> {
+                        val quotes = annotations.filter { it.type == AnnotationType.QUOTE.name || it.type == AnnotationType.HIGHLIGHT.name }
+                        itemsIndexed(quotes) { _, item ->
+                            Surface(Modifier.fillMaxWidth().padding(vertical = 3.dp).clickable { onGo(item.blockIndex) }, shape = MaterialTheme.shapes.large, tonalElevation = 1.dp) {
+                                Text(item.selectedText.take(180), modifier = Modifier.padding(14.dp), maxLines = 5)
                             }
                         }
                     }
                 }
             }
-        },
-        confirmButton = { TextButton(onClick = onDismiss) { Text("Закрыть") } }
-    )
+            TextButton(onClick = onDismiss, modifier = Modifier.align(Alignment.End)) { Text("Закрыть") }
+            Spacer(Modifier.height(12.dp))
+        }
+    }
 }
 
 @Composable

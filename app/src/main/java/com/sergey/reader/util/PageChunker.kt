@@ -26,7 +26,7 @@ object PageChunker {
         }
 
         blocks.forEachIndexed { index, block ->
-            val isolated = block.kind == ReaderBlock.Kind.IMAGE || block.kind == ReaderBlock.Kind.PDF_PAGE
+            val isolated = block.kind == ReaderBlock.Kind.IMAGE || block.kind == ReaderBlock.Kind.PDF_PAGE || block.kind == ReaderBlock.Kind.DJVU_PAGE
             if (isolated) {
                 flush(index)
                 pages += ReaderPage(index, index + 1)
@@ -38,7 +38,7 @@ object PageChunker {
             val blockCost = when (block.kind) {
                 ReaderBlock.Kind.CHAPTER -> (block.text.length * 2 + 160).coerceAtLeast(220)
                 ReaderBlock.Kind.FOOTNOTE -> (block.text.length * 1.15f).toInt() + 80
-                ReaderBlock.Kind.PARAGRAPH -> block.text.length + 55
+                ReaderBlock.Kind.PARAGRAPH, ReaderBlock.Kind.LINK -> block.text.length + 55
                 else -> 0
             }
 

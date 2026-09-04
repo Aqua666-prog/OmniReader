@@ -61,8 +61,8 @@ object ExactPaginator {
 
         blocks.forEachIndexed { blockIndex, block ->
             when (block.kind) {
-                ReaderBlock.Kind.PDF_TEXT -> Unit // searchable/TTS layer; never occupies visual space
-                ReaderBlock.Kind.IMAGE, ReaderBlock.Kind.PDF_PAGE -> {
+                ReaderBlock.Kind.PDF_TEXT, ReaderBlock.Kind.DJVU_TEXT -> Unit // searchable/TTS layers; never occupy visual space
+                ReaderBlock.Kind.IMAGE, ReaderBlock.Kind.PDF_PAGE, ReaderBlock.Kind.DJVU_PAGE -> {
                     flush()
                     pages += ExactReaderPage(listOf(PageSlice(blockIndex)))
                     remaining = heightPx
@@ -152,7 +152,7 @@ object ExactPaginator {
         if (exact >= 0) return exact
         val firstForBlock = pages.indexOfFirst { page -> page.slices.any { it.blockIndex == blockIndex } }
         if (firstForBlock >= 0) return firstForBlock
-        // Hidden PDF text blocks belong to the preceding rendered PDF page.
+        // Hidden fixed-layout text blocks belong to the preceding rendered PDF/DjVu page.
         val previous = pages.indexOfLast { it.endBlockInclusive < blockIndex }
         return previous.coerceAtLeast(0)
     }
