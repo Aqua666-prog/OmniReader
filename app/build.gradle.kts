@@ -1,3 +1,7 @@
+import java.io.File
+import java.net.URI
+import java.security.MessageDigest
+
 plugins {
     id("com.android.application")
     id("org.jetbrains.kotlin.android")
@@ -55,8 +59,8 @@ val djvuAarUrl =
 val djvuAarGitBlobSha1 = "bde3f2e2cbe693343e5180b69e80b5580b40ecd4"
 val djvuAarFile = layout.projectDirectory.file("libs/android-djvulibre-release.aar")
 
-fun gitBlobSha1(file: java.io.File): String {
-    val digest = java.security.MessageDigest.getInstance("SHA-1")
+fun gitBlobSha1(file: File): String {
+    val digest = MessageDigest.getInstance("SHA-1")
     digest.update("blob ${file.length()}\u0000".toByteArray(Charsets.UTF_8))
     file.inputStream().buffered().use { input ->
         val buffer = ByteArray(64 * 1024)
@@ -77,9 +81,9 @@ val prepareDjvuAar = tasks.register("prepareDjvuAar") {
 
         if (!valid()) {
             target.parentFile.mkdirs()
-            val temp = java.io.File(target.parentFile, target.name + ".part")
+            val temp = File(target.parentFile, target.name + ".part")
             temp.delete()
-            java.net.URI(djvuAarUrl).toURL().openStream().buffered().use { input ->
+            URI(djvuAarUrl).toURL().openStream().buffered().use { input ->
                 temp.outputStream().buffered().use { output -> input.copyTo(output) }
             }
             if (gitBlobSha1(temp) != djvuAarGitBlobSha1) {
