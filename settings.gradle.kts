@@ -11,10 +11,8 @@ dependencyResolutionManagement {
     repositories {
         google()
         mavenCentral()
-        // Required only by the TIFF decoder transitive native artifact.
-        maven("https://jitpack.io")
     }
 }
 
-rootProject.name = "OmniReader"
+rootProject.name = "ReaderApp"
 include(":app")

@@ -1,0 +1,66 @@
+package com.sergey.reader.data.parser
+
+import android.content.Context
+import android.net.Uri
+import android.provider.OpenableColumns
+import java.io.File
+import com.sergey.reader.model.ParsedBook
+import com.sergey.reader.util.TextUtil
+
+interface BookParser {
+    suspend fun parse(uri: Uri, displayName: String): ParsedBook
+}
+
+class BookParserFactory(private val context: Context) {
+    private val resolver = context.contentResolver
+
+    fun displayName(uri: Uri): String {
+        if (uri.scheme == "file") return uri.path?.let(::File)?.name ?: (uri.lastPathSegment ?: "Книга")
+        runCatching {
+            resolver.query(uri, arrayOf(OpenableColumns.DISPLAY_NAME), null, null, null)?.use { cursor ->
+                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
+                if (index >= 0 && cursor.moveToFirst()) return cursor.getString(index)
+            }
+        }
+        return uri.lastPathSegment ?: "Книга"
+    }
+
+    fun size(uri: Uri): Long {
+        if (uri.scheme == "file") return uri.path?.let(::File)?.length() ?: 0L
+        runCatching {
+            resolver.query(uri, arrayOf(OpenableColumns.SIZE), null, null, null)?.use { cursor ->
+                val index = cursor.getColumnIndex(OpenableColumns.SIZE)
+                if (index >= 0 && cursor.moveToFirst() && !cursor.isNull(index)) return cursor.getLong(index)
+            }
+        }
+        return 0L
+    }
+
+    fun format(displayName: String): String = displayName.substringAfterLast('.', "").lowercase()
+
+    fun parserFor(displayName: String): BookParser = when (format(displayName)) {
+        "epub" -> EpubParser(context)
+        "fb2" -> Fb2Parser(resolver)
+        "txt" -> TxtParser(resolver)
+        "pdf" -> PdfParser(context)
+        else -> PlainFallbackParser(resolver)
+    }
+
+    fun isSupported(displayName: String): Boolean = format(displayName) in setOf("epub", "fb2", "txt", "pdf")
+}
+
+class PlainFallbackParser(private val resolver: android.content.ContentResolver) : BookParser {
+    override suspend fun parse(uri: Uri, displayName: String): ParsedBook {
+        val bytes = resolver.openInputStream(uri)?.use { it.readBytes() } ?: ByteArray(0)
+        val text = TextUtil.decode(bytes)
+        return ParsedBook(
+            title = TextUtil.fileTitle(displayName),
+            chapters = listOf(
+                com.sergey.reader.model.ParsedChapter(
+                    "Текст",
+                    text.split(Regex("\\n\\s*\\n")).map(TextUtil::normalizeParagraph).filter { it.isNotBlank() }
+                )
+            )
+        )
+    }
+}

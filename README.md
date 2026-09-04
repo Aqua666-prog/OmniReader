@@ -1,122 +1,260 @@
-# OmniReader
+# Reader — Android-читалка
 
-OmniReader is an offline-first universal Android reader for local books, manga, comics, documents, scans and image folders. It does not require an account or server. Original files remain in their SAF-selected folders; Room is the source of truth for the local library and reading progress.
+Собственная **offline-first** Android-читалка по `docs/PRODUCT_SPEC.md`.
 
-## Architecture
+Текущая версия: **0.4.0**.
 
-Conventional Android Gradle project: Kotlin, Jetpack Compose, Material 3, Coroutines/Flow, Room, Navigation Compose and Android Storage Access Framework. No `MANAGE_EXTERNAL_STORAGE`, no mandatory server and no `runBlocking` in application code.
+## Что уже реализовано
 
-Data path:
+### Библиотека и импорт
 
-`SAF roots → recursive LibraryScanner → magic/MIME/container detection → metadata + thumbnail → Room → library UI → ReaderRegistry → ReaderProvider → progress back to Room`
+- локальная библиотека на Room;
+- импорт нескольких файлов через Storage Access Framework;
+- два режима: читать исходный файл на месте или копировать во внутреннюю библиотеку;
+- рекурсивное сканирование выбранной папки;
+- защита от повторного добавления одного URI;
+- EPUB: OPF/spine, метаданные, обложка, XHTML-главы, встроенные raster-изображения, footnote-блоки, `<br>` и построчное уплощение таблиц;
+- FB2: метаданные, авторы, серия, обложка и текст глав;
+- TXT с UTF-8 / Windows-1251 fallback;
+- PDF: импорт, обложка, raster-render через Android `PdfRenderer`; на Android 15+ дополнительно извлекается системный текстовый слой;
+- автоматическое распознавание серии и номера тома;
+- «Читаю сейчас», все книги, избранное, «Хочу прочитать», прочитанные;
+- группировки по авторам, сериям, коллекциям, форматам и папкам;
+- поиск по названию, автору, серии и коллекции;
+- список и сетка обложек;
+- экран «О книге» и ручное редактирование метаданных.
 
-Reader implementations are isolated by content family. A broken optional decoder can therefore be removed without rewriting the scanner, database or other readers.
+### Reader
 
-## Reader providers
+- вертикальное чтение;
+- горизонтальный постраничный режим;
+- типографически измеряемая пагинация reflowable-текста через Compose `TextMeasurer`;
+- длинные абзацы делятся по реальным измеренным окончаниям строк, при этом сохраняются исходные смещения текста;
+- позиция в постраничном режиме сохраняется как `block + offset`, поэтому возврат идёт на тот же фрагмент абзаца;
+- отдельные страницы для EPUB-иллюстраций и PDF-страниц;
+- автоматическое сохранение позиции;
+- прогресс и быстрый переход по книге;
+- оглавление;
+- закладки;
+- полнотекстовый поиск по EPUB/FB2/TXT с переходом к измеренному фрагменту абзаца в постраничном режиме;
+- поиск по PDF на Android 15+ при наличии платформенного text layer;
+- в PDF доступен режим «Текст страницы»: выделение, цитаты, заметки, словарь и перевод по извлечённому тексту;
+- размер шрифта, межстрочный интервал, поля и выравнивание;
+- темы День / Сепия / Сумерки / Ночь / AMOLED;
+- пользовательские `.ttf/.otf` шрифты;
+- глобальные настройки через DataStore;
+- отдельный профиль чтения для конкретной книги.
 
-- `TextReaderProvider` — EPUB/EPUB3, FB2, FB2.ZIP, TXT, HTML/HTM/XHTML, Markdown.
-- `DocumentTextReaderProvider` — DOCX, ODT and RTF semantic/local text extraction.
-- `KindleReaderProvider` — DRM-free MOBI/AZW3 with uncompressed/PalmDOC text records. DRM and HUFF/CDIC currently fail explicitly instead of crashing.
-- `ComicReaderProvider` — CBZ/ZIP, CBR/RAR, CB7/7Z, CBT/TAR and virtual image folders. Natural sorting, on-demand pages and true RTL/LTR pager direction.
-- `PdfReaderProvider` — Android `PdfRenderer`, using temporary SAF staging only when the source descriptor is not seekable.
-- `DjvuReaderProvider` — DJVU/DJV through an isolated DjVuLibre-based decoder.
-- `ImageReaderProvider` — JPG/JPEG, PNG, WEBP, AVIF, GIF, BMP and multi-page TIFF/TIF.
+### Цитаты, выделения и заметки
 
-PDF, DJVU and TIFF share the `PagedBitmapReaderSession` abstraction. Comic archives and image folders share `ComicReaderSession`.
+- выделение текста стандартными Android/Compose selection handles;
+- собственная панель действий;
+- режимы контекстного меню «Простое / Расширенное»;
+- копирование;
+- сохранение цитаты;
+- цветные выделения;
+- заметка к выделенному фрагменту;
+- постоянное отображение сохранённых выделений;
+- шаринг выделенного текста;
+- переход из цитаты или заметки обратно к месту в книге.
 
-## Supported formats
+Данные хранятся в Room в таблице `annotations`. Типы: `HIGHLIGHT`, `QUOTE`, `NOTE`.
 
-| Family | Formats | Status / boundary |
-|---|---|---|
-| Reflowable books | EPUB, EPUB3 | Local OPF/spine parsing, metadata/cover, chapters |
-| FictionBook | FB2, FB2.ZIP | Local XML parsing, metadata/cover, chapters |
-| Plain/web text | TXT, HTML, HTM, XHTML, MD/Markdown | Local reader; TXT encoding detection |
-| Rich/office text | RTF, DOCX, ODT | Local semantic text extraction; not pixel-perfect Word/Writer rendering |
-| Kindle | MOBI, AZW3 | DRM-free PalmDOC/uncompressed text; HUFF/CDIC/DRM are explicit limitations |
-| Fixed documents | PDF | Native page rendering, zoom, page resume |
-| Scans | DJVU, DJV | Local native decoder, page rendering/resume |
-| ZIP comics | CBZ, ZIP | Lazy page reads, natural sort |
-| RAR comics | CBR, RAR | Junrar, serialized lazy extraction |
-| 7z comics | CB7, 7Z | Commons Compress, lazy page extraction |
-| TAR comics | CBT | Streaming TAR page access |
-| Images | JPG, JPEG, PNG, WEBP, AVIF, GIF, BMP | Standalone image reader; AVIF depends on Android platform ImageDecoder support |
-| TIFF | TIFF, TIF | Native multi-page decoder |
-| Image folders | folders containing 2+ supported images | Collapsed into one virtual manga/comic item rather than hundreds of library rows |
+### Словарь, перевод и веб-поиск
 
-Archives are not permanently unpacked. Readers stage only when an API requires a random-access local `File`; the bounded cache is disposable and versioned by file metadata.
+- внутренний персональный словарь;
+- сохранение термина вместе с контекстом и книгой-источником;
+- редактирование перевода и определения;
+- внешний словарь;
+- внешний переводчик;
+- внешний веб-поиск;
+- пользовательские URL-шаблоны с маркером `{text}`.
 
-### Comic page image formats
+Пример:
 
-Archive/folder pages are recognized as JPG/JPEG/PNG/WEBP/AVIF/GIF/BMP/TIFF/TIF. The UI uses Android `ImageDecoder` where available, `BitmapFactory` as fallback, and the TIFF decoder for TIFF pages.
-
-## Format detection
-
-Detection does not trust extensions alone. It combines:
-
-1. extension;
-2. MIME type;
-3. magic bytes/signatures;
-4. ZIP/container structure.
-
-Examples: ZIP containing `META-INF/container.xml`/EPUB mimetype is EPUB; ZIP containing `word/` is DOCX; ZIP containing `.fb2` is FB2.ZIP; ZIP dominated by images is treated as CBZ/comic content. RAR, 7z, PDF, DJVU, MOBI, TAR and common image signatures are recognized directly.
-
-## Text encodings
-
-TXT supports UTF-8, UTF-8 BOM, UTF-16 LE/BE and heuristic fallback among Windows-1251, Windows-1252, KOI8-R, ISO-8859-1 and ISO-8859-5. Room already contains a per-item encoding override field for a future explicit chooser UI.
-
-## Library scanner
-
-The user may add multiple roots with `OpenDocumentTree`; persistable URI permissions are retained. The scanner is recursive, cancellable and asynchronous.
-
-Every successful scan has a generation token. Existing rows are only marked missing after the entire traversal completes, so cancellation cannot make an incompletely scanned half-library disappear. Fingerprints reconnect moved/renamed files when possible and preserve reading progress/status/user metadata.
-
-Directories with two or more direct supported images are represented as `IMAGE_FOLDER` virtual manga items and their individual image files are not separately added to the same library level.
-
-## Progress and database
-
-Room stores chapter/page/offset plus normalized progress. Text readers restore chapter and scroll offset; comic/PDF/DJVU/TIFF readers restore page. Rescanning does not reset reading state.
-
-The schema also contains bookmarks, notes, collections, tags and reading-session records so those UIs can be added without replacing the persistence layer.
-
-## UI
-
-The 0.1.0 source release includes library grid/list, search, folder management, scanner progress/cancel, text reader, paged document/image reader and comic reader with true RTL/LTR switching, pinch zoom and double-tap zoom.
-
-The current text pipeline prioritizes deterministic offline reading over exact CSS/Word layout fidelity. Advanced typography, page-turn text pagination, two-page comics, Webtoon mode, full notes/quotes UI, statistics and advanced series management remain later UX work rather than format blockers.
-
-## Tests
-
-Source tests cover:
-
-- natural page sorting;
-- series/volume parsing;
-- supported extension recognition;
-- text encoding detection;
-- RTF extraction;
-- PalmDOC decompression primitive;
-- scanner-style Room rescan/move merge and progress preservation;
-- reading progress/status calculation.
-
-The release gate remains:
-
-```bash
-./gradlew clean
-./gradlew testDebugUnitTest
-./gradlew lintDebug
-./gradlew assembleDebug
+```text
+https://www.google.com/search?q={text}
 ```
 
-## Building
+### Исследовательский центр
 
-Read `BUILD.md` and `RELEASE_NOTES.md`. This generated archive also includes `bootstrap-wrapper.sh` and `bootstrap-wrapper.ps1`. If `gradle/wrapper/gradle-wrapper.jar` is absent, run the matching bootstrap script once; it downloads the official Gradle 9.5.0 wrapper JAR and verifies its published SHA-256 before installation.
+Раздел **«Цитаты и заметки»**:
 
-GitHub Actions: `.github/workflows/build-apk.yml` performs the same bootstrap automatically, then tests, lints and assembles the debug APK.
+- Цитаты;
+- Заметки;
+- Закладки;
+- Словарь;
+- поиск;
+- удаление;
+- редактирование словарных карточек;
+- возврат к исходному месту в книге;
+- экспорт текущего раздела в Markdown, TXT и автономный HTML.
 
-## Known limitations
+### Фоновая TTS-озвучка
 
-- MOBI/AZW3: DRM is intentionally unsupported. HUFF/CDIC/KF8 reconstruction is not yet implemented by the internal parser; such books return an explicit unsupported-compression error.
-- AVIF: platform decoding depends on Android version/device codec support; the app fails gracefully where the platform cannot decode it.
-- DOCX/ODT/RTF: semantic reading text, not pixel-exact office-layout rendering; complex equations, charts, floating objects and macros are not reproduced.
-- EPUB: native deterministic text extraction does not reproduce every CSS/fixed-layout EPUB feature.
-- PDF text search/outline UI, advanced bookmarks/notes UI, Webtoon/two-page comic modes and statistics are outside this format-expansion pass.
-- The generation environment did not have an Android SDK/networked Gradle build environment, so this source release is not an APK-validated release until you run the build gate yourself. See `BUILD_STATUS.md`.
+`ReaderTtsService` поддерживает:
+
+- Android TextToSpeech;
+- foreground service;
+- чтение в фоне и при выключенном экране;
+- старт с текущей позиции;
+- последовательное чтение текстовых блоков;
+- скорость 0.1×–4×;
+- pitch 0.5×–2×;
+- сохранение прогресса;
+- Android `MediaSession`;
+- Play / Pause;
+- Previous / Next;
+- Stop;
+- кнопки уведомления;
+- системные/Bluetooth media controls через MediaSession;
+- подсветку произносимого диапазона текста через `UtteranceProgressListener.onRangeStart`;
+- автоматическое перелистывание точных страниц вслед за TTS;
+- таймер сна на 15 / 30 / 45 / 60 / 90 минут.
+
+PDF озвучивается через платформенный текстовый слой на Android 15+; на более старых версиях Android raster-only PDF остаётся без TTS.
+
+### Пользовательские шрифты
+
+- импорт `.ttf` и `.otf` через SAF;
+- копирование в приватное хранилище приложения;
+- список установленных пользователем шрифтов;
+- выбор глобального шрифта;
+- выбор шрифта только для текущей книги;
+- удаление пользовательского шрифта.
+
+### Профили чтения по книгам
+
+Для конкретной книги можно включить отдельный профиль. Он переопределяет глобальные:
+
+- размер шрифта;
+- межстрочный интервал;
+- поля;
+- тему;
+- выравнивание;
+- пользовательский шрифт;
+- вертикальный/постраничный режим.
+
+Инструменты текста и параметры TTS пока остаются глобальными.
+
+### Backup / Restore
+
+В 0.3.0 добавлена локальная резервная копия в ZIP-контейнере:
+
+- Room database;
+- DataStore settings;
+- внутренние книги;
+- обложки;
+- пользовательские шрифты;
+- извлечённые EPUB-ресурсы.
+
+Restore делается безопасно в два шага:
+
+1. архив проверяется и распаковывается в `pending_restore`;
+2. данные применяются при следующем полном запуске приложения **до** открытия Room/DataStore.
+
+После выбора резервной копии приложение нужно полностью закрыть и открыть снова.
+
+## База данных
+
+Room schema: **version 4**.
+
+0.2.0 добавила:
+
+```text
+annotations
+dictionary_entries
+```
+
+0.3.0 добавила:
+
+```text
+paragraphs.kind
+paragraphs.resourcePath
+book_reading_profiles
+```
+
+0.4.0 добавила:
+
+```text
+books.positionOffset
+```
+
+`PDF_TEXT` хранится как новое значение уже существующего `paragraphs.kind`, поэтому отдельной колонки для него не требуется.
+
+Есть миграции:
+
+```text
+1 -> 2
+2 -> 3
+3 -> 4
+```
+
+## Ограничения renderer 0.4.0
+
+Горизонтальная пагинация обычного текста теперь опирается на реальный Compose text layout, а не на приблизительный character budget. Она учитывает активный шрифт, размер, line-height, ширину и выравнивание. Изображения и PDF по-прежнему считаются отдельными media-страницами.
+
+EPUB пока не является браузерным renderer: произвольный CSS издателя, SVG, MathML, сложные float/layout-конструкции и интерактивные noteref/backlink-связи ещё не воспроизводятся полностью.
+
+На Android 15+ `PdfRenderer.Page.getTextContents()` даёт текст для поиска, TTS и действий над выделением. Геометрическое выделение прямо поверх букв PDF и подсветка search-bounds на raster-странице ещё не реализованы. На Android < 15 PDF остаётся raster-only.
+
+## Следующий приоритет
+
+1. Интерактивные EPUB noteref/backlinks и граф ссылок.
+2. SVG / MathML / более богатые таблицы EPUB.
+3. Геометрическое PDF-выделение прямо поверх страницы и overlay поисковых совпадений.
+4. Профили голосов TTS и улучшенный audio focus.
+5. Выборочный/зашифрованный backup.
+6. WebDAV / облачная синхронизация.
+7. Планшетный двухколоночный режим.
+
+## Стек
+
+- Kotlin
+- Jetpack Compose
+- Material 3
+- Room
+- DataStore
+- Storage Access Framework / DocumentFile
+- Coroutines / Flow
+- Android TextToSpeech
+- Android MediaSession
+- Android PdfRenderer
+
+Проект настроен под `compileSdk 37`, Compose BOM `2026.08.00`, AGP `9.3.2` и Kotlin `2.4.10`.
+
+## Сборка
+
+В репозитории есть `.github/workflows/android.yml`. Workflow ставит Gradle 9.5.0, запускает unit-тесты, собирает debug APK и загружает его как artifact.
+
+Локально при установленном Android SDK и Gradle 9.5.0:
+
+```bash
+gradle testDebugUnitTest
+gradle assembleDebug
+```
+
+APK:
+
+```text
+app/build/outputs/apk/debug/app-debug.apk
+```
+
+## Структура
+
+```text
+com.sergey.reader/
+├── data/backup      локальный backup + staged restore
+├── data/db          Room: книги, блоки, закладки, annotations, dictionary, reading profiles
+├── data/fonts       импорт и каталог пользовательских TTF/OTF
+├── data/parser      EPUB / FB2 / TXT / PDF
+├── data/repository  импорт, сканирование, чтение, research operations
+├── data/settings    DataStore + reader/TTS/text-tools settings
+├── model            parser/reader/page models
+├── tts              foreground TTS + MediaSession
+├── ui/reader        exact pagination + EPUB/PDF resource rendering
+├── ui/screens       библиотека, reader, research center, сведения, настройки
+└── util             pagination, series inference, text utilities, external actions
+```
+
+Полная продуктовая спецификация находится в `docs/PRODUCT_SPEC.md`.
