@@ -304,6 +304,7 @@ class EpubParser(private val context: Context) : BookParser {
     private fun pull(bytes: ByteArray): XmlPullParser = XmlPullParserFactory.newInstance().apply {
         isNamespaceAware = true
     }.newPullParser().apply {
+        setFeature(android.util.Xml.FEATURE_RELAXED, true)
         setInput(ByteArrayInputStream(bytes), null)
     }
 
