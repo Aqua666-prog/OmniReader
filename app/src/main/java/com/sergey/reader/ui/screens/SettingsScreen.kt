@@ -16,10 +16,17 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ArrowBack
+import androidx.compose.foundation.clickable
+import androidx.compose.material3.Surface
+import androidx.compose.material.icons.filled.ExpandLess
+import androidx.compose.material.icons.filled.ExpandMore
+import androidx.compose.material3.Icon
+import androidx.compose.runtime.saveable.rememberSaveable
+import com.sergey.reader.data.settings.AppAppearance
+import com.sergey.reader.BuildConfig
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.FilterChip
-import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
@@ -90,7 +97,25 @@ fun SettingsScreen(vm: LibraryViewModel, onBack: () -> Unit) {
         Column(
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp)
         ) {
-            Text("Чтение", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+            Text("Сделайте чтение своим", style = MaterialTheme.typography.headlineLarge)
+            Text("Оформление, голос и ваша библиотека", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Spacer(Modifier.height(20.dp))
+            SettingsSection("Оформление приложения", initiallyExpanded = true) {
+                Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    AppAppearance.entries.forEach { appearance ->
+                        FilterChip(selected = settings.appAppearance == appearance, onClick = { vm.setAppAppearance(appearance) }, label = {
+                            Text(when (appearance) { AppAppearance.SYSTEM -> "Системное"; AppAppearance.LIGHT -> "Светлое"; AppAppearance.DARK -> "Тёмное" })
+                        })
+                    }
+                }
+                Text("Цвет страницы настраивается отдельно от библиотеки.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            }
+            SettingsSection("Чтение", initiallyExpanded = true) {
+                Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    Text("Не выключать экран", modifier = Modifier.weight(1f))
+                    Switch(settings.keepScreenOn, vm::setKeepScreenOn)
+                }
+
             Spacer(Modifier.height(12.dp))
 
             Text("Режим по умолчанию", style = MaterialTheme.typography.titleMedium)
@@ -197,8 +222,8 @@ fun SettingsScreen(vm: LibraryViewModel, onBack: () -> Unit) {
                 Switch(settings.showControlsOnTap, vm::setShowControlsOnTap)
             }
 
-            Spacer(Modifier.height(28.dp))
-            Text("Озвучка (TTS)", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+            }
+            SettingsSection("Читать вслух") {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {
                 Column(Modifier.weight(1f)) {
                     Text("Аудиочтение")
@@ -216,8 +241,8 @@ fun SettingsScreen(vm: LibraryViewModel, onBack: () -> Unit) {
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(Modifier.height(28.dp))
-            Text("Инструменты текста", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+            }
+            SettingsSection("Словарь и перевод") {
             Text("Контекстное меню", style = MaterialTheme.typography.titleMedium)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 FilterChip(
@@ -282,15 +307,15 @@ fun SettingsScreen(vm: LibraryViewModel, onBack: () -> Unit) {
                 }
             )
 
-            Spacer(Modifier.height(28.dp))
-            Text("Резервные копии", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+            }
+            SettingsSection("Резервные копии") {
             Text(
-                "Копия содержит локальную базу Reader, прогресс, цитаты, заметки, словарь, профили книг, свои шрифты, обложки и файлы внутренней библиотеки.",
+                "Копия содержит библиотеку, прогресс, цитаты, заметки, словарь, профили книг, свои шрифты, обложки и файлы внутренней библиотеки.",
                 style = MaterialTheme.typography.bodyMedium
             )
             Spacer(Modifier.height(10.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(onClick = { backupLauncher.launch("Reader-backup-0.5.0.readerbackup") }) {
+            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                Button(onClick = { backupLauncher.launch("OmniReader-backup-${BuildConfig.VERSION_NAME}.readerbackup") }) {
                     Text("Создать копию")
                 }
                 Button(onClick = { restoreLauncher.launch(arrayOf("application/zip", "application/octet-stream")) }) {
@@ -298,19 +323,20 @@ fun SettingsScreen(vm: LibraryViewModel, onBack: () -> Unit) {
                 }
             }
             Text(
-                "Восстановление применяется при следующем полном запуске приложения: это защищает живую базу Room от подмены во время работы.",
+                "После восстановления полностью закройте и снова откройте приложение. Текущая библиотека будет заменена данными копии.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
-            Spacer(Modifier.height(28.dp))
-            Text("Импорт", style = MaterialTheme.typography.titleLarge, color = MaterialTheme.colorScheme.primary)
+            }
+            SettingsSection("Поддерживаемые форматы") {
             Text("Форматы: EPUB, FB2, FB2.ZIP, FB2.GZ, TXT, PDF, HTML/HTM, Markdown, RTF, DOCX, ODT, MOBI/AZW/AZW3 (без DRM; PalmDOC), ZIP, CBZ, CBR, CB7, CHM и DjVu/DJV. DjVu отображается постранично через нативный DjVuLibre backend. EPUB поддерживает иллюстрации, сноски и переходы из встроенного оглавления.")
 
+            }
             Spacer(Modifier.height(28.dp))
-            Text("Reader 0.5.0", style = MaterialTheme.typography.labelLarge)
+            Text("OmniReader ${BuildConfig.VERSION_NAME}", style = MaterialTheme.typography.labelLarge)
             Text(
-                "В этой версии: расширенный импорт форматов и архивов, кликабельное EPUB-оглавление, полноэкранные иллюстрации с сохранением, прогресс внутри главы, скрытие панелей тапом, быстрые настройки текста и явное отключение/остановка TTS.",
+                "Ваши книги, заметки и место остановки — на вашем устройстве. Для чтения импортированных книг подключение к интернету не требуется.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
@@ -346,4 +372,18 @@ private fun themeLabelForSettings(theme: ReaderThemePreset): String = when (them
     ReaderThemePreset.TWILIGHT -> "Сумерки"
     ReaderThemePreset.NIGHT -> "Ночь"
     ReaderThemePreset.AMOLED -> "AMOLED"
+}
+
+@Composable
+private fun SettingsSection(title: String, initiallyExpanded: Boolean = false, content: @Composable () -> Unit) {
+    var expanded by rememberSaveable { mutableStateOf(initiallyExpanded) }
+    Surface(shape = MaterialTheme.shapes.large, color = MaterialTheme.colorScheme.surface, modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
+        Column {
+            Row(Modifier.fillMaxWidth().clickable(onClickLabel = if (expanded) "Свернуть" else "Развернуть") { expanded = !expanded }.padding(18.dp), verticalAlignment = Alignment.CenterVertically) {
+                Text(title, style = MaterialTheme.typography.titleLarge, modifier = Modifier.weight(1f))
+                Icon(if (expanded) Icons.Default.ExpandLess else Icons.Default.ExpandMore, null)
+            }
+            if (expanded) Column(Modifier.padding(start = 18.dp, end = 18.dp, bottom = 20.dp)) { content() }
+        }
+    }
 }

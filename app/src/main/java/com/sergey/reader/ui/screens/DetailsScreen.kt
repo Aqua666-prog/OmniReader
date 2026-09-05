@@ -38,6 +38,9 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -73,13 +76,15 @@ fun DetailsScreen(vm: DetailsViewModel, onBack: () -> Unit, onRead: (Long) -> Un
             Column(
                 Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(20.dp)
             ) {
-                Row(Modifier.fillMaxWidth()) {
-                    CoverImage(b, Modifier.size(width = 132.dp, height = 196.dp))
-                    Column(Modifier.padding(start = 18.dp).weight(1f)) {
-                        Text(b.title, style = MaterialTheme.typography.headlineSmall)
-                        if (b.authors.isNotBlank()) Text(b.authors, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                        Spacer(Modifier.height(12.dp))
-                        Button(onClick = { onRead(b.id) }) { Icon(Icons.Default.PlayArrow, contentDescription = null); Text("Читать") }
+                Column(Modifier.fillMaxWidth(), horizontalAlignment = Alignment.CenterHorizontally) {
+                    CoverImage(b, Modifier.size(width = 158.dp, height = 236.dp).clip(MaterialTheme.shapes.small))
+                    Spacer(Modifier.height(24.dp))
+                    Text(b.title, style = MaterialTheme.typography.headlineLarge, textAlign = TextAlign.Center)
+                    if (b.authors.isNotBlank()) Text(b.authors, style = MaterialTheme.typography.titleMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = TextAlign.Center, modifier = Modifier.padding(top = 8.dp))
+                    Spacer(Modifier.height(20.dp))
+                    Button(onClick = { onRead(b.id) }, modifier = Modifier.fillMaxWidth().height(56.dp)) {
+                        Icon(Icons.Default.PlayArrow, null)
+                        Text(if (b.lastOpenedAt == null) "Начать чтение" else "Продолжить чтение")
                     }
                 }
 
@@ -106,7 +111,6 @@ fun DetailsScreen(vm: DetailsViewModel, onBack: () -> Unit, onRead: (Long) -> Un
                 Meta("Папка", b.folderLabel ?: "—")
                 Meta("Добавлено", DateFormat.getDateTimeInstance().format(Date(b.addedAt)))
                 b.lastOpenedAt?.let { Meta("Последнее чтение", DateFormat.getDateTimeInstance().format(Date(it))) }
-                Meta("URI", b.uri)
                 if (!b.annotation.isNullOrBlank()) {
                     Spacer(Modifier.height(18.dp))
                     Text("Аннотация", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.SemiBold)

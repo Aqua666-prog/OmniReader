@@ -12,7 +12,7 @@ class MainActivity : ComponentActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         val container = (application as ReaderApplication).container
-        handleIncomingIntent(intent, container)
+        if (savedInstanceState == null) handleIncomingIntent(intent, container)
         setContent {
             ReaderApp(container)
         }
@@ -29,6 +29,8 @@ class MainActivity : ComponentActivity() {
         if (intent.action != Intent.ACTION_VIEW) return
         lifecycleScope.launch {
             container.books.importDocument(uri)
+                .onSuccess { container.pendingOpenBook.value = it }
+                .onFailure { android.widget.Toast.makeText(this@MainActivity, it.message ?: "Не удалось открыть файл", android.widget.Toast.LENGTH_LONG).show() }
         }
     }
 }

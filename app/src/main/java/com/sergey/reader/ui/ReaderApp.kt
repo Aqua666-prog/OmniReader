@@ -1,6 +1,7 @@
 package com.sergey.reader.ui
 
 import androidx.activity.compose.BackHandler
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableLongStateOf
@@ -9,6 +10,8 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
 import androidx.lifecycle.viewmodel.compose.viewModel
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import com.sergey.reader.data.settings.ReaderSettings
 import com.sergey.reader.AppContainer
 import com.sergey.reader.ui.screens.DetailsScreen
 import com.sergey.reader.ui.screens.LibraryScreen
@@ -21,16 +24,26 @@ private enum class Route { LIBRARY, READER, DETAILS, RESEARCH, SETTINGS }
 
 @Composable
 fun ReaderApp(container: AppContainer) {
-    ReaderAppTheme {
-        var route by rememberSaveable { mutableStateOf(Route.LIBRARY.name) }
-        var bookId by rememberSaveable { mutableLongStateOf(0L) }
-        var readerStartBlock by rememberSaveable { mutableIntStateOf(-1) }
+    val preferences by container.settings.settings.collectAsStateWithLifecycle(initialValue = ReaderSettings())
+    var route by rememberSaveable { mutableStateOf(Route.LIBRARY.name) }
+    var bookId by rememberSaveable { mutableLongStateOf(0L) }
+    var readerStartBlock by rememberSaveable { mutableIntStateOf(-1) }
+    ReaderAppTheme(preferences.appAppearance, manageSystemBars = route != Route.READER.name) {
 
         val libraryVm: LibraryViewModel = viewModel(
             key = "library",
             factory = AppViewModelFactory(container, AppViewModelFactory.Kind.LIBRARY)
         )
 
+        val incomingBook by container.pendingOpenBook.collectAsStateWithLifecycle()
+        LaunchedEffect(incomingBook) {
+            incomingBook?.let { id ->
+                bookId = id
+                readerStartBlock = -1
+                route = Route.READER.name
+                container.pendingOpenBook.compareAndSet(id, null)
+            }
+        }
         val current = Route.valueOf(route)
         BackHandler(enabled = current != Route.LIBRARY) { route = Route.LIBRARY.name }
 

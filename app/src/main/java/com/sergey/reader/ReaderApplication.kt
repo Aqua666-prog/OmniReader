@@ -17,6 +17,7 @@ class ReaderApplication : Application() {
 }
 
 class AppContainer(app: Application) {
+    val pendingOpenBook = kotlinx.coroutines.flow.MutableStateFlow<Long?>(null)
     val database: ReaderDatabase = ReaderDatabase.get(app)
     val books: BookRepository = BookRepository(app, database)
     val settings: ReaderSettingsRepository = ReaderSettingsRepository(app)

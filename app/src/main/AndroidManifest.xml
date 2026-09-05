@@ -8,7 +8,9 @@
     <application
         android:name=".ReaderApplication"
         android:allowBackup="true"
-        android:label="Reader"
+        android:label="OmniReader"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher"
         android:supportsRtl="true"
         android:theme="@style/AppTheme">
 

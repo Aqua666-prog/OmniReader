@@ -14,6 +14,8 @@ private val Context.readerDataStore by preferencesDataStore(name = "reader_setti
 enum class ReaderThemePreset { DAY, SEPIA, TWILIGHT, NIGHT, AMOLED }
 enum class LibraryViewMode { LIST, GRID }
 enum class ContextMenuMode { SIMPLE, EXTENDED }
+enum class AppAppearance { SYSTEM, LIGHT, DARK }
+enum class LibrarySort { RECENT, TITLE, AUTHOR, ADDED, PROGRESS }
 enum class ReaderMode { VERTICAL, PAGED }
 
 data class ReaderSettings(
@@ -23,7 +25,11 @@ data class ReaderSettings(
     val theme: ReaderThemePreset = ReaderThemePreset.SEPIA,
     val justify: Boolean = true,
     val showControlsOnTap: Boolean = true,
-    val libraryViewMode: LibraryViewMode = LibraryViewMode.LIST,
+    val libraryViewMode: LibraryViewMode = LibraryViewMode.GRID,
+    val librarySort: LibrarySort = LibrarySort.RECENT,
+    val appAppearance: AppAppearance = AppAppearance.SYSTEM,
+    val keepScreenOn: Boolean = true,
+    val brightness: Float = -1f,
     val translatorUrlTemplate: String = DEFAULT_TRANSLATOR_TEMPLATE,
     val dictionaryUrlTemplate: String = DEFAULT_DICTIONARY_TEMPLATE,
     val webSearchUrlTemplate: String = DEFAULT_WEB_SEARCH_TEMPLATE,
@@ -43,6 +49,10 @@ data class ReaderSettings(
 
 class ReaderSettingsRepository(private val context: Context) {
     private object Keys {
+        val librarySort = stringPreferencesKey("library_sort")
+        val appAppearance = stringPreferencesKey("app_appearance")
+        val keepScreenOn = booleanPreferencesKey("keep_screen_on")
+        val brightness = floatPreferencesKey("reader_brightness")
         val fontSize = floatPreferencesKey("font_size")
         val lineHeight = floatPreferencesKey("line_height")
         val padding = floatPreferencesKey("padding")
@@ -69,7 +79,11 @@ class ReaderSettingsRepository(private val context: Context) {
             theme = p[Keys.theme]?.let { runCatching { ReaderThemePreset.valueOf(it) }.getOrNull() } ?: ReaderThemePreset.SEPIA,
             justify = p[Keys.justify] ?: true,
             showControlsOnTap = p[Keys.controls] ?: true,
-            libraryViewMode = p[Keys.libraryView]?.let { runCatching { LibraryViewMode.valueOf(it) }.getOrNull() } ?: LibraryViewMode.LIST,
+            libraryViewMode = p[Keys.libraryView]?.let { runCatching { LibraryViewMode.valueOf(it) }.getOrNull() } ?: LibraryViewMode.GRID,
+            librarySort = p[Keys.librarySort]?.let { runCatching { LibrarySort.valueOf(it) }.getOrNull() } ?: LibrarySort.RECENT,
+            appAppearance = p[Keys.appAppearance]?.let { runCatching { AppAppearance.valueOf(it) }.getOrNull() } ?: AppAppearance.SYSTEM,
+            keepScreenOn = p[Keys.keepScreenOn] ?: true,
+            brightness = p[Keys.brightness]?.takeIf { it.isFinite() }?.let { if (it < 0) -1f else it.coerceIn(0.02f, 1f) } ?: -1f,
             translatorUrlTemplate = p[Keys.translatorUrl] ?: ReaderSettings.DEFAULT_TRANSLATOR_TEMPLATE,
             dictionaryUrlTemplate = p[Keys.dictionaryUrl] ?: ReaderSettings.DEFAULT_DICTIONARY_TEMPLATE,
             webSearchUrlTemplate = p[Keys.webSearchUrl] ?: ReaderSettings.DEFAULT_WEB_SEARCH_TEMPLATE,
@@ -82,6 +96,10 @@ class ReaderSettingsRepository(private val context: Context) {
         )
     }
 
+    suspend fun setLibrarySort(value: LibrarySort) { context.readerDataStore.edit { it[Keys.librarySort] = value.name } }
+    suspend fun setAppAppearance(value: AppAppearance) { context.readerDataStore.edit { it[Keys.appAppearance] = value.name } }
+    suspend fun setKeepScreenOn(value: Boolean) { context.readerDataStore.edit { it[Keys.keepScreenOn] = value } }
+    suspend fun setBrightness(value: Float) { context.readerDataStore.edit { it[Keys.brightness] = if (!value.isFinite() || value < 0) -1f else value.coerceIn(0.02f, 1f) } }
     suspend fun setFontSize(value: Float) { context.readerDataStore.edit { it[Keys.fontSize] = value.coerceIn(14f, 42f) } }
     suspend fun setLineHeight(value: Float) { context.readerDataStore.edit { it[Keys.lineHeight] = value.coerceIn(1.0f, 2.0f) } }
     suspend fun setPadding(value: Float) { context.readerDataStore.edit { it[Keys.padding] = value.coerceIn(8f, 52f) } }

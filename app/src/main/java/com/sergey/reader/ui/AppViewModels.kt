@@ -14,6 +14,8 @@ import com.sergey.reader.data.db.DictionaryEntryEntity
 import com.sergey.reader.data.db.ParagraphEntity
 import com.sergey.reader.data.fonts.UserFont
 import com.sergey.reader.data.repository.ScanResult
+import com.sergey.reader.data.settings.AppAppearance
+import com.sergey.reader.data.settings.LibrarySort
 import com.sergey.reader.data.settings.ContextMenuMode
 import com.sergey.reader.data.settings.LibraryViewMode
 import com.sergey.reader.data.settings.ReaderMode
@@ -25,9 +27,12 @@ import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.filterNotNull
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.withLock
 
 class LibraryViewModel(private val c: AppContainer) : ViewModel() {
     val books: StateFlow<List<BookEntity>> = c.books.observeBooks()
@@ -46,31 +51,47 @@ class LibraryViewModel(private val c: AppContainer) : ViewModel() {
 
     fun clearMessage() { _message.value = null }
 
+    private val importMutex = kotlinx.coroutines.sync.Mutex()
+
     fun importDocuments(uris: List<Uri>, copyIntoLibrary: Boolean = false) {
         viewModelScope.launch {
-            var ok = 0
-            val errors = mutableListOf<String>()
-            uris.forEach { uri ->
-                val result = c.books.importDocument(uri, copyIntoLibrary = copyIntoLibrary)
-                if (result.isSuccess) ok++ else errors += result.exceptionOrNull()?.message.orEmpty()
-            }
-            _message.value = if (errors.isEmpty()) {
-                "Добавлено книг: $ok"
-            } else {
-                "Добавлено: $ok. Ошибок: ${errors.size}. ${errors.firstOrNull().orEmpty()}"
+            importMutex.withLock {
+                var ok = 0
+                val errors = mutableListOf<String>()
+                try {
+                    uris.forEachIndexed { index, uri ->
+                        _scanState.value = "Добавляем книги: ${index + 1} из ${uris.size}"
+                        val result = c.books.importDocument(uri, copyIntoLibrary = copyIntoLibrary)
+                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                        if (result.isSuccess) ok++ else errors += result.exceptionOrNull()?.message.orEmpty()
+                    }
+                    _message.value = if (errors.isEmpty()) "Добавлено книг: $ok"
+                        else "Добавлено: $ok. Ошибок: ${errors.size}. ${errors.firstOrNull().orEmpty()}"
+                } finally {
+                    _scanState.value = null
+                }
             }
         }
     }
 
     fun scanTree(uri: Uri) {
         viewModelScope.launch {
-            _scanState.value = "Сканирование…"
-            val result: ScanResult = c.books.scanTree(uri) { name -> _scanState.value = "Сканирование: $name" }
-            _scanState.value = null
-            _message.value = buildString {
-                append("Импортировано: ${result.imported}")
-                if (result.skipped > 0) append(", пропущено: ${result.skipped}")
-                if (result.errors.isNotEmpty()) append(", ошибок: ${result.errors.size}")
+            importMutex.withLock {
+                _scanState.value = "Сканирование…"
+                try {
+                    val result = c.books.scanTree(uri) { name -> _scanState.value = "Сканирование: $name" }
+                    _message.value = buildString {
+                        append("Импортировано: ${result.imported}")
+                        if (result.skipped > 0) append(", пропущено: ${result.skipped}")
+                        if (result.errors.isNotEmpty()) append(", ошибок: ${result.errors.size}")
+                    }
+                } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                    throw cancelled
+                } catch (error: Exception) {
+                    _message.value = error.message ?: "Не удалось прочитать папку"
+                } finally {
+                    _scanState.value = null
+                }
             }
         }
     }
@@ -105,12 +126,16 @@ class LibraryViewModel(private val c: AppContainer) : ViewModel() {
     fun toggleFavorite(book: BookEntity) = viewModelScope.launch { c.books.setFavorite(book.id, !book.favorite) }
     fun toggleWant(book: BookEntity) = viewModelScope.launch { c.books.setWantToRead(book.id, !book.wantToRead) }
     fun toggleFinished(book: BookEntity) = viewModelScope.launch { c.books.setFinished(book.id, !book.finished) }
+    fun setLibrarySort(value: LibrarySort) = viewModelScope.launch { c.settings.setLibrarySort(value) }
+    fun setAppAppearance(value: AppAppearance) = viewModelScope.launch { c.settings.setAppAppearance(value) }
     fun setLibraryView(mode: LibraryViewMode) = viewModelScope.launch { c.settings.setLibraryView(mode) }
     fun setFontSize(value: Float) = viewModelScope.launch { c.settings.setFontSize(value) }
     fun setLineHeight(value: Float) = viewModelScope.launch { c.settings.setLineHeight(value) }
     fun setPadding(value: Float) = viewModelScope.launch { c.settings.setPadding(value) }
     fun setTheme(value: ReaderThemePreset) = viewModelScope.launch { c.settings.setTheme(value) }
     fun setJustify(value: Boolean) = viewModelScope.launch { c.settings.setJustify(value) }
+    fun setKeepScreenOn(value: Boolean) = viewModelScope.launch { c.settings.setKeepScreenOn(value) }
+    fun setBrightness(value: Float) = viewModelScope.launch { c.settings.setBrightness(value) }
     fun setShowControlsOnTap(value: Boolean) = viewModelScope.launch { c.settings.setShowControlsOnTap(value) }
     fun setTtsEnabled(value: Boolean) = viewModelScope.launch { c.settings.setTtsEnabled(value) }
     fun setFontPath(value: String?) = viewModelScope.launch { c.settings.setFontPath(value) }
@@ -130,9 +155,6 @@ class ReaderViewModel(private val c: AppContainer, private val bookId: Long) : V
     private val _blocks = MutableStateFlow<List<ReaderBlock>>(emptyList())
     val blocks = _blocks.asStateFlow()
 
-    private val globalSettings: StateFlow<ReaderSettings> = c.settings.settings
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ReaderSettings())
-
     val readingProfile: StateFlow<BookReadingProfileEntity?> = c.books.observeReadingProfile(bookId)
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
 
@@ -140,9 +162,14 @@ class ReaderViewModel(private val c: AppContainer, private val bookId: Long) : V
         .map { it != null }
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), false)
 
-    val settings: StateFlow<ReaderSettings> = combine(globalSettings, readingProfile) { global, profile ->
+    // Raw flows have no synthetic defaults: do not overwrite a saved paged anchor
+    // while DataStore and the per-book Room profile are still loading.
+    val resolvedSettings: StateFlow<ReaderSettings?> = combine(c.settings.settings, c.books.observeReadingProfile(bookId)) { global, profile ->
         profile?.let { applyProfile(global, it) } ?: global
-    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), ReaderSettings())
+    }.stateIn(viewModelScope, SharingStarted.WhileSubscribed(5_000), null)
+
+    val settings: StateFlow<ReaderSettings> = resolvedSettings.filterNotNull()
+        .stateIn(viewModelScope, SharingStarted.Eagerly, ReaderSettings())
 
     val customFonts: StateFlow<List<UserFont>> = c.fonts.fonts
 
@@ -158,10 +185,31 @@ class ReaderViewModel(private val c: AppContainer, private val bookId: Long) : V
     private val _message = MutableStateFlow<String?>(null)
     val message = _message.asStateFlow()
 
-    init {
-        viewModelScope.launch {
-            _book.value = c.books.getBook(bookId)
-            _blocks.value = c.books.loadBlocks(bookId)
+    private val _loading = MutableStateFlow(true)
+    val loading = _loading.asStateFlow()
+    private val _loadError = MutableStateFlow<String?>(null)
+    val loadError = _loadError.asStateFlow()
+    private var loadJob: kotlinx.coroutines.Job? = null
+    private val progressMutex = kotlinx.coroutines.sync.Mutex()
+
+    init { reload() }
+
+    fun reload() {
+        if (loadJob?.isActive == true) return
+        loadJob = viewModelScope.launch {
+            _loading.value = true
+            _loadError.value = null
+            try {
+                _book.value = c.books.getBook(bookId) ?: error("Книга больше не находится в библиотеке")
+                _blocks.value = c.books.loadBlocks(bookId)
+                if (_blocks.value.isEmpty()) _loadError.value = "В документе нет доступного содержимого"
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _loadError.value = error.message ?: "Ошибка чтения документа"
+            } finally {
+                _loading.value = false
+            }
         }
     }
 
@@ -171,6 +219,7 @@ class ReaderViewModel(private val c: AppContainer, private val bookId: Long) : V
         val total = _blocks.value.size
         if (total == 0) return
         viewModelScope.launch {
+            progressMutex.withLock {
             c.books.updateProgress(
                 bookId = bookId,
                 blockIndex = index.coerceIn(0, total - 1),
@@ -178,16 +227,21 @@ class ReaderViewModel(private val c: AppContainer, private val bookId: Long) : V
                 positionOffset = offset.coerceAtLeast(0)
             )
             _book.value = c.books.getBook(bookId)
+            }
         }
     }
 
     fun toggleBookmark(blockIndex: Int) = viewModelScope.launch { c.books.addOrRemoveBookmark(bookId, blockIndex) }
 
-    fun search(query: String) = viewModelScope.launch {
-        _searchResults.value = c.books.searchBook(bookId, query)
+    private var searchJob: kotlinx.coroutines.Job? = null
+    fun search(query: String) {
+        searchJob?.cancel()
+        searchJob = viewModelScope.launch {
+            _searchResults.value = c.books.searchBook(bookId, query)
+        }
     }
 
-    fun clearSearch() { _searchResults.value = emptyList() }
+    fun clearSearch() { searchJob?.cancel(); _searchResults.value = emptyList() }
 
     fun saveHighlight(selection: TextSelection, colorHex: Long) = saveAnnotation(selection, AnnotationType.HIGHLIGHT, colorHex)
     fun saveQuote(selection: TextSelection, colorHex: Long = 0x66FFF59D) = saveAnnotation(selection, AnnotationType.QUOTE, colorHex)
@@ -303,6 +357,8 @@ class ReaderViewModel(private val c: AppContainer, private val bookId: Long) : V
         globalChange = { c.settings.setReaderMode(value) }
     )
 
+    fun setKeepScreenOn(value: Boolean) = viewModelScope.launch { c.settings.setKeepScreenOn(value) }
+    fun setBrightness(value: Float) = viewModelScope.launch { c.settings.setBrightness(value) }
     fun setShowControlsOnTap(value: Boolean) = viewModelScope.launch {
         c.settings.setShowControlsOnTap(value)
     }

@@ -54,6 +54,16 @@ import androidx.compose.material.icons.filled.Translate
 import androidx.compose.material.icons.filled.Timer
 import androidx.compose.material.icons.filled.VolumeUp
 import androidx.compose.material.icons.filled.VolumeOff
+import androidx.compose.material3.ListItem
+import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.rememberUpdatedState
+import com.sergey.reader.ui.reader.ReadingComfort
+import com.sergey.reader.ui.theme.SystemBars
+import androidx.compose.ui.graphics.luminance
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -199,7 +209,12 @@ fun ReaderScreen(
 ) {
     val book by vm.book.collectAsStateWithLifecycle()
     val blocks by vm.blocks.collectAsStateWithLifecycle()
-    val settings by vm.settings.collectAsStateWithLifecycle()
+    val resolvedSettings by vm.resolvedSettings.collectAsStateWithLifecycle()
+    val settings = resolvedSettings
+    if (settings == null) {
+        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator() }
+        return
+    }
     val perBookProfile by vm.perBookProfileEnabled.collectAsStateWithLifecycle()
     val customFonts by vm.customFonts.collectAsStateWithLifecycle()
     val bookmarks by vm.bookmarks.collectAsStateWithLifecycle()
@@ -208,7 +223,11 @@ fun ReaderScreen(
     val message by vm.message.collectAsStateWithLifecycle()
     val ttsState by ReaderTtsController.state.collectAsStateWithLifecycle()
 
+    val loadError by vm.loadError.collectAsStateWithLifecycle()
+    val loading by vm.loading.collectAsStateWithLifecycle()
+    ReadingComfort(settings.keepScreenOn, settings.brightness)
     val palette = palette(settings.theme)
+    SystemBars(palette.background, darkIcons = palette.background.luminance() > .5f)
     val readerFont = rememberReaderFont(settings.fontPath)
     val listState = rememberLazyListState()
     val scope = rememberCoroutineScope()
@@ -256,8 +275,8 @@ fun ReaderScreen(
             chapterSpacingPx = with(density) { 50.dp.roundToPx() }
         )
     }
-    val pages = remember(blocks, textMeasurer, pageWidthPx, pageHeightPx, paginationStyles) {
-        ExactPaginator.paginate(
+    val pages = remember(blocks, textMeasurer, pageWidthPx, pageHeightPx, paginationStyles, settings.readerMode) {
+        if (settings.readerMode == ReaderMode.VERTICAL) emptyList() else ExactPaginator.paginate(
             blocks = blocks,
             measurer = textMeasurer,
             widthPx = pageWidthPx,
@@ -268,6 +287,7 @@ fun ReaderScreen(
     val pagerState = rememberPagerState(pageCount = { pages.size.coerceAtLeast(1) })
 
     var controlsVisible by remember { mutableStateOf(true) }
+    var toolsVisible by remember { mutableStateOf(false) }
     var settingsVisible by remember { mutableStateOf(false) }
     var navigationVisible by remember { mutableStateOf(false) }
     var searchVisible by remember { mutableStateOf(false) }
@@ -306,7 +326,7 @@ fun ReaderScreen(
         if (!restored && blocks.isNotEmpty()) {
             val requested = (initialBlock ?: b.positionBlock).coerceIn(0, blocks.lastIndex)
             currentIndex = visibleBlockIndex(blocks, requested)
-            currentOffset = b.positionOffset.coerceAtLeast(0)
+            currentOffset = if (initialBlock == null) b.positionOffset.coerceAtLeast(0) else 0
             vm.savePosition(requested, currentOffset)
             restored = true
         }
@@ -321,8 +341,8 @@ fun ReaderScreen(
         }
     }
 
-    LaunchedEffect(listState, blocks.size, settings.readerMode) {
-        if (blocks.isEmpty() || settings.readerMode != ReaderMode.VERTICAL) return@LaunchedEffect
+    LaunchedEffect(listState, blocks.size, settings.readerMode, restored) {
+        if (!restored || blocks.isEmpty() || settings.readerMode != ReaderMode.VERTICAL) return@LaunchedEffect
         snapshotFlow { listState.firstVisibleItemIndex }
             .distinctUntilChanged()
             .debounce(450)
@@ -333,8 +353,8 @@ fun ReaderScreen(
             }
     }
 
-    LaunchedEffect(pagerState, pages, settings.readerMode) {
-        if (pages.isEmpty() || settings.readerMode != ReaderMode.PAGED) return@LaunchedEffect
+    LaunchedEffect(pagerState, pages, settings.readerMode, restored) {
+        if (!restored || pages.isEmpty() || settings.readerMode != ReaderMode.PAGED) return@LaunchedEffect
         snapshotFlow { pagerState.currentPage }
             .distinctUntilChanged()
             .debounce(250)
@@ -371,6 +391,20 @@ fun ReaderScreen(
             }
             if (pagerState.currentPage != targetPage) pagerState.animateScrollToPage(targetPage)
         }
+    }
+
+    // Save the visible position at background/exit even when the debounce has not fired yet.
+    val latestSave by rememberUpdatedState(newValue = {
+        if (restored && blocks.isNotEmpty()) {
+            if (settings.readerMode == ReaderMode.VERTICAL) vm.savePosition(listState.firstVisibleItemIndex, 0)
+            else pages.getOrNull(pagerState.currentPage)?.slices?.firstOrNull()?.let { vm.savePosition(it.blockIndex, it.startOffset) }
+        }
+    })
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, vm) {
+        val observer = LifecycleEventObserver { _, event -> if (event == Lifecycle.Event.ON_STOP) latestSave() }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { latestSave(); lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     val isBookmarked = bookmarks.any { it.blockIndex == currentIndex }
@@ -412,8 +446,17 @@ fun ReaderScreen(
 
     Box(Modifier.fillMaxSize().background(palette.background)) {
         if (blocks.isEmpty()) {
-            Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                Text("Подготовка книги…", color = palette.foreground)
+            Column(Modifier.fillMaxSize().padding(32.dp), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
+                if (loading) {
+                    CircularProgressIndicator(color = palette.foreground)
+                    Spacer(Modifier.height(20.dp))
+                    Text("Открываем книгу…", color = palette.foreground)
+                } else {
+                    Text("Не удалось открыть книгу", style = MaterialTheme.typography.headlineSmall, color = palette.foreground)
+                    Text(loadError ?: "В документе нет доступного содержимого", color = palette.foreground, modifier = Modifier.padding(vertical = 16.dp))
+                    Button(onClick = vm::reload) { Text("Попробовать снова") }
+                    TextButton(onClick = onBack) { Text("Вернуться в библиотеку") }
+                }
             }
         } else if (settings.readerMode == ReaderMode.VERTICAL) {
             LazyColumn(
@@ -532,66 +575,11 @@ fun ReaderScreen(
                         IconButton(onClick = onBack) { Icon(Icons.Default.ArrowBack, contentDescription = "Назад") }
                     },
                     actions = {
-                        if (settings.ttsEnabled) {
-                            IconButton(onClick = {
-                                val currentBookId = book?.id ?: return@IconButton
-                                val intent = Intent(context, ReaderTtsService::class.java)
-                                if (ttsState.active && ttsState.bookId == currentBookId) {
-                                    intent.action = ReaderTtsService.ACTION_TOGGLE
-                                    context.startService(intent)
-                                } else {
-                                    intent.action = ReaderTtsService.ACTION_START
-                                    intent.putExtra(ReaderTtsService.EXTRA_BOOK_ID, currentBookId)
-                                    intent.putExtra(ReaderTtsService.EXTRA_BLOCK_INDEX, currentIndex)
-                                    intent.putExtra(ReaderTtsService.EXTRA_RATE, settings.ttsRate)
-                                    intent.putExtra(ReaderTtsService.EXTRA_PITCH, settings.ttsPitch)
-                                    ContextCompat.startForegroundService(context, intent)
-                                }
-                            }) {
-                                Icon(
-                                    Icons.Default.VolumeUp,
-                                    contentDescription = if (ttsState.active && ttsState.bookId == book?.id) "Пауза / продолжить озвучку" else "Озвучка",
-                                    tint = if (ttsState.active && ttsState.bookId == book?.id) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            }
-                            if (ttsState.active && ttsState.bookId == book?.id) {
-                                IconButton(onClick = {
-                                    context.startService(Intent(context, ReaderTtsService::class.java).apply {
-                                        action = ReaderTtsService.ACTION_STOP
-                                    })
-                                }) {
-                                    Icon(Icons.Default.VolumeOff, contentDescription = "Остановить озвучку")
-                                }
-                                IconButton(onClick = { sleepTimerVisible = true }) {
-                                    Icon(
-                                        Icons.Default.Timer,
-                                        contentDescription = "Таймер сна",
-                                        tint = if (ttsState.sleepTimerActive) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                    )
-                                }
-                            }
+                        IconButton(onClick = { vm.toggleBookmark(currentIndex) }, enabled = blocks.isNotEmpty()) {
+                            Icon(if (isBookmarked) Icons.Default.Bookmark else Icons.Default.BookmarkBorder, "Закладка")
                         }
-                        IconButton(
-                            onClick = { searchVisible = true },
-                            enabled = when (book?.format) {
-                                "PDF" -> blocks.any { it.kind == ReaderBlock.Kind.PDF_TEXT }
-                                "DJVU", "DJV" -> blocks.any { it.kind == ReaderBlock.Kind.DJVU_TEXT }
-                                else -> true
-                            }
-                        ) {
-                            Icon(Icons.Default.Search, contentDescription = "Поиск")
-                        }
-                        IconButton(onClick = { navigationVisible = true }) {
-                            Icon(Icons.Default.FormatListBulleted, contentDescription = "Оглавление")
-                        }
-                        IconButton(onClick = { settingsVisible = true }) {
-                            Icon(Icons.Default.Settings, contentDescription = "Настройки")
-                        }
-                        IconButton(onClick = {
-                            Toast.makeText(context, "Выдели текст для цитаты, заметки, словаря или перевода", Toast.LENGTH_SHORT).show()
-                        }) {
-                            Icon(Icons.Default.MoreVert, contentDescription = "Ещё")
-                        }
+                        IconButton(onClick = { settingsVisible = true }) { Icon(Icons.Default.Settings, "Оформление чтения") }
+                        IconButton(onClick = { toolsVisible = true }) { Icon(Icons.Default.MoreVert, "Инструменты чтения") }
                     }
                 )
             }
@@ -618,8 +606,9 @@ fun ReaderScreen(
                     chapterPage = chapterPagePosition,
                     chapterPageCount = chapterPageIndices.size.coerceAtLeast(1),
                     onSeek = { page ->
+                        if (pages.isEmpty()) return@PagedBottomBar
                         val safe = page.coerceIn(0, pages.lastIndex)
-                        val first = pages[safe].slices.first()
+                        val first = pages[safe].slices.firstOrNull() ?: return@PagedBottomBar
                         currentIndex = first.blockIndex
                         currentOffset = first.startOffset
                         scope.launch { pagerState.scrollToPage(safe) }
@@ -664,6 +653,42 @@ fun ReaderScreen(
                 },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
+        }
+    }
+
+    if (toolsVisible) {
+        ModalBottomSheet(onDismissRequest = { toolsVisible = false }) {
+            Text("Инструменты чтения", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(24.dp, 12.dp))
+            ListItem(headlineContent = { Text("Оглавление и закладки") }, leadingContent = { Icon(Icons.Default.FormatListBulleted, null) }, modifier = Modifier.clickable { toolsVisible = false; navigationVisible = true })
+            ListItem(headlineContent = { Text("Найти в книге") }, leadingContent = { Icon(Icons.Default.Search, null) }, modifier = Modifier.clickable { toolsVisible = false; searchVisible = true })
+            if (settings.ttsEnabled) {
+                val active = ttsState.active && ttsState.bookId == book?.id
+                ListItem(headlineContent = { Text(if (active) "Пауза / продолжить озвучку" else "Читать вслух") }, leadingContent = { Icon(Icons.Default.VolumeUp, null) }, modifier = Modifier.clickable {
+                    toolsVisible = false
+                    book?.id?.let { id ->
+                        val intent = Intent(context, ReaderTtsService::class.java)
+                        if (active) {
+                            intent.action = ReaderTtsService.ACTION_TOGGLE
+                            context.startService(intent)
+                        } else {
+                            intent.action = ReaderTtsService.ACTION_START
+                            intent.putExtra(ReaderTtsService.EXTRA_BOOK_ID, id)
+                            intent.putExtra(ReaderTtsService.EXTRA_BLOCK_INDEX, currentIndex)
+                            intent.putExtra(ReaderTtsService.EXTRA_RATE, settings.ttsRate)
+                            intent.putExtra(ReaderTtsService.EXTRA_PITCH, settings.ttsPitch)
+                            ContextCompat.startForegroundService(context, intent)
+                        }
+                    }
+                })
+                if (active) {
+                    ListItem(headlineContent = { Text("Остановить озвучку") }, leadingContent = { Icon(Icons.Default.VolumeOff, null) }, modifier = Modifier.clickable {
+                        toolsVisible = false
+                        context.startService(Intent(context, ReaderTtsService::class.java).apply { action = ReaderTtsService.ACTION_STOP })
+                    })
+                    ListItem(headlineContent = { Text("Таймер сна") }, leadingContent = { Icon(Icons.Default.Timer, null) }, modifier = Modifier.clickable { toolsVisible = false; sleepTimerVisible = true })
+                }
+            }
+            Text("Удерживайте текст, чтобы выделить цитату, добавить заметку или открыть перевод.", style = MaterialTheme.typography.bodySmall, modifier = Modifier.padding(24.dp))
         }
     }
 
@@ -1387,6 +1412,28 @@ private fun ReaderSettingsSheet(
                 .padding(bottom = 28.dp)
         ) {
             Text("Настройки чтения", style = MaterialTheme.typography.headlineSmall)
+            Spacer(Modifier.height(14.dp))
+            val previewPalette = palette(settings.theme)
+            val previewFont = rememberReaderFont(settings.fontPath)
+            Surface(shape = MaterialTheme.shapes.medium, color = previewPalette.background) {
+                Text("Новая глава начинается с тишины. Оставьте суету за пределами страницы и погрузитесь в историю.",
+                    color = previewPalette.foreground, fontFamily = previewFont, fontSize = settings.fontSizeSp.sp,
+                    lineHeight = (settings.fontSizeSp * settings.lineHeight).sp,
+                    textAlign = if (settings.justify) TextAlign.Justify else TextAlign.Start,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = settings.horizontalPaddingDp.dp, vertical = 20.dp))
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Яркость устройства", modifier = Modifier.weight(1f))
+                Switch(checked = settings.brightness < 0f, onCheckedChange = { vm.setBrightness(if (it) -1f else .5f) })
+            }
+            if (settings.brightness >= 0f) {
+                ReaderValueControl("Яркость", "${(settings.brightness * 100).toInt()}%", settings.brightness, .02f..1f, .05f, vm::setBrightness)
+            }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Text("Не выключать экран при чтении", modifier = Modifier.weight(1f))
+                Switch(settings.keepScreenOn, vm::setKeepScreenOn)
+            }
+            Text("Яркость и время работы экрана применяются ко всем книгам.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(14.dp))
 
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.SpaceBetween) {

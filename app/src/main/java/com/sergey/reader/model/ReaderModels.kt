@@ -51,7 +51,7 @@ data class ReaderPage(
 
 enum class LibrarySection(val label: String) {
     CURRENT("Читаю сейчас"),
-    ALL("Все книги и документы"),
+    ALL("Все книги"),
     FAVORITES("Избранное"),
     WANT_TO_READ("Хочу прочитать"),
     FINISHED("Прочитанные"),

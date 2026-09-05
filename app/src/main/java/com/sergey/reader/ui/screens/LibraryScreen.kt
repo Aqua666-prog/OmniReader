@@ -1,266 +1,198 @@
 package com.sergey.reader.ui.screens
 
 import android.net.Uri
+import androidx.activity.compose.BackHandler
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.foundation.layout.Row
-import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.grid.GridCells
-import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
-import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.grid.*
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Add
-import androidx.compose.material.icons.filled.Book
-import androidx.compose.material.icons.filled.CheckCircle
-import androidx.compose.material.icons.filled.Close
-import androidx.compose.material.icons.filled.Favorite
-import androidx.compose.material.icons.filled.Folder
-import androidx.compose.material.icons.filled.FolderOpen
-import androidx.compose.material.icons.filled.FormatQuote
-import androidx.compose.material.icons.filled.GridView
-import androidx.compose.material.icons.filled.Info
-import androidx.compose.material.icons.filled.Menu
-import androidx.compose.material.icons.filled.MoreVert
-import androidx.compose.material.icons.filled.Person
-import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Settings
-import androidx.compose.material.icons.filled.Style
-import androidx.compose.material.icons.filled.ViewList
-import androidx.compose.material3.AlertDialog
-import androidx.compose.material3.Button
-import androidx.compose.material3.Divider
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.ListItem
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalDrawerSheet
-import androidx.compose.material3.ModalNavigationDrawer
-import androidx.compose.material3.NavigationDrawerItem
-import androidx.compose.material3.Scaffold
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
-import androidx.compose.material3.Text
-import androidx.compose.material3.TopAppBar
-import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.setValue
+import androidx.compose.material.icons.filled.*
+import androidx.compose.material3.*
+import androidx.compose.runtime.*
+import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
-import androidx.compose.material3.rememberDrawerState
-import androidx.compose.material3.DrawerValue
 import com.sergey.reader.data.db.BookEntity
 import com.sergey.reader.data.settings.LibraryViewMode
+import com.sergey.reader.data.settings.LibrarySort
 import com.sergey.reader.model.LibrarySection
 import com.sergey.reader.ui.LibraryViewModel
-import com.sergey.reader.ui.components.BookGridCard
-import com.sergey.reader.ui.components.BookListCard
+import com.sergey.reader.ui.components.*
+import com.sergey.reader.util.LibraryQuery
 import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun LibraryScreen(
-    vm: LibraryViewModel,
-    onOpenBook: (Long) -> Unit,
-    onDetails: (Long) -> Unit,
-    onResearch: () -> Unit,
-    onSettings: () -> Unit
-) {
+fun LibraryScreen(vm: LibraryViewModel, onOpenBook: (Long) -> Unit, onDetails: (Long) -> Unit, onResearch: () -> Unit, onSettings: () -> Unit) {
     val books by vm.books.collectAsStateWithLifecycle()
     val settings by vm.settings.collectAsStateWithLifecycle()
     val message by vm.message.collectAsStateWithLifecycle()
     val scanState by vm.scanState.collectAsStateWithLifecycle()
-
     val drawer = rememberDrawerState(DrawerValue.Closed)
     val scope = rememberCoroutineScope()
     val snackbar = remember { SnackbarHostState() }
-    var section by remember { mutableStateOf(LibrarySection.CURRENT) }
-    var searchVisible by remember { mutableStateOf(false) }
-    var query by remember { mutableStateOf("") }
+    var sectionName by rememberSaveable { mutableStateOf(LibrarySection.CURRENT.name) }
+    val section = LibrarySection.valueOf(sectionName)
+    var query by rememberSaveable { mutableStateOf("") }
+    var groupKey by rememberSaveable { mutableStateOf<String?>(null) }
+    val selectedGroup = groupKey?.let { section to it }
     var addMenu by remember { mutableStateOf(false) }
-    var importCopies by remember { mutableStateOf(false) }
-    var selectedGroup by remember { mutableStateOf<Pair<LibrarySection, String>?>(null) }
-
+    var sortMenu by remember { mutableStateOf(false) }
+    var importCopies by rememberSaveable { mutableStateOf(false) }
     val openFiles = rememberLauncherForActivityResult(ActivityResultContracts.OpenMultipleDocuments()) { uris: List<Uri> ->
         if (uris.isNotEmpty()) vm.importDocuments(uris, copyIntoLibrary = importCopies)
     }
-    val openTree = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri: Uri? ->
-        uri?.let(vm::scanTree)
-    }
-
-    LaunchedEffect(message) {
-        message?.let {
-            snackbar.showSnackbar(it)
-            vm.clearMessage()
+    val openTree = rememberLauncherForActivityResult(ActivityResultContracts.OpenDocumentTree()) { it?.let(vm::scanTree) }
+    fun select(item: LibrarySection) { sectionName = item.name; groupKey = null; query = "" }
+    BackHandler(drawer.isOpen || groupKey != null || query.isNotEmpty()) {
+        when {
+            drawer.isOpen -> scope.launch { drawer.close() }
+            query.isNotEmpty() -> query = ""
+            else -> groupKey = null
         }
     }
-
-    ModalNavigationDrawer(
-        drawerState = drawer,
-        drawerContent = {
-            ModalDrawerSheet {
-                Spacer(Modifier.height(16.dp))
-                Text("Reader", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp))
-                LibrarySection.entries.forEach { item ->
-                    NavigationDrawerItem(
-                        label = { Text(item.label) },
-                        selected = section == item && selectedGroup == null,
-                        onClick = {
-                            section = item
-                            selectedGroup = null
-                            scope.launch { drawer.close() }
-                        },
-                        icon = { Icon(iconFor(item), contentDescription = null) },
-                        modifier = Modifier.padding(horizontal = 10.dp)
-                    )
+    LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.clearMessage() } }
+    val filtered = remember(books, section, groupKey, query, settings.librarySort) {
+        LibraryQuery.select(books, section, selectedGroup, query, settings.librarySort)
+    }
+    val continued = remember(books) { books.filter { it.lastOpenedAt != null && !it.finished }.maxByOrNull { it.lastOpenedAt ?: 0L } }
+    val home = section == LibrarySection.CURRENT && query.isBlank()
+    val grouped = section in groupSections && groupKey == null && query.isBlank()
+    ModalNavigationDrawer(drawerState = drawer, drawerContent = {
+        ModalDrawerSheet {
+            Spacer(Modifier.height(24.dp))
+            Text("OmniReader", style = MaterialTheme.typography.headlineLarge, modifier = Modifier.padding(horizontal = 24.dp))
+            Text("Личное пространство для книг", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(24.dp, 8.dp))
+            LazyColumn(Modifier.weight(1f), contentPadding = PaddingValues(vertical = 12.dp)) {
+                items(LibrarySection.entries.toList()) { item ->
+                    NavigationDrawerItem(label = { Text(item.label) }, selected = section == item && groupKey == null,
+                        onClick = { select(item); scope.launch { drawer.close() } },
+                        icon = { Icon(iconFor(item), null) }, modifier = Modifier.padding(horizontal = 12.dp))
                 }
-                Divider(Modifier.padding(vertical = 8.dp))
-                NavigationDrawerItem(
-                    label = { Text("Цитаты и заметки") },
-                    selected = false,
-                    onClick = { scope.launch { drawer.close() }; onResearch() },
-                    icon = { Icon(Icons.Default.FormatQuote, contentDescription = null) },
-                    modifier = Modifier.padding(horizontal = 10.dp)
-                )
-                NavigationDrawerItem(
-                    label = { Text("Настройки") },
-                    selected = false,
-                    onClick = { scope.launch { drawer.close() }; onSettings() },
-                    icon = { Icon(Icons.Default.Settings, contentDescription = null) },
-                    modifier = Modifier.padding(horizontal = 10.dp)
-                )
+                item {
+                    HorizontalDivider(Modifier.padding(24.dp, 12.dp))
+                    NavigationDrawerItem(label = { Text("Цитаты и заметки") }, selected = false, onClick = onResearch, icon = { Icon(Icons.Default.FormatQuote, null) }, modifier = Modifier.padding(horizontal = 12.dp))
+                    NavigationDrawerItem(label = { Text("Настройки") }, selected = false, onClick = onSettings, icon = { Icon(Icons.Default.Settings, null) }, modifier = Modifier.padding(horizontal = 12.dp))
+                }
             }
         }
-    ) {
+    }) {
         Scaffold(
             snackbarHost = { SnackbarHost(snackbar) },
             topBar = {
-                Column {
-                    TopAppBar(
-                        title = {
-                            Text(selectedGroup?.second ?: section.label, maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        },
-                        navigationIcon = {
-                            IconButton(onClick = {
-                                if (selectedGroup != null) selectedGroup = null else scope.launch { drawer.open() }
-                            }) {
-                                Icon(if (selectedGroup != null) Icons.Default.Close else Icons.Default.Menu, contentDescription = null)
-                            }
-                        },
-                        actions = {
-                            IconButton(onClick = { searchVisible = !searchVisible }) { Icon(Icons.Default.Search, contentDescription = "Поиск") }
-                            IconButton(onClick = {
-                                vm.setLibraryView(if (settings.libraryViewMode == LibraryViewMode.LIST) LibraryViewMode.GRID else LibraryViewMode.LIST)
-                            }) {
-                                Icon(if (settings.libraryViewMode == LibraryViewMode.LIST) Icons.Default.GridView else Icons.Default.ViewList, contentDescription = "Вид")
-                            }
-                            IconButton(onClick = { openTree.launch(null) }) { Icon(Icons.Default.FolderOpen, contentDescription = "Сканировать папку") }
-                            Box {
-                                IconButton(onClick = { addMenu = true }) { Icon(Icons.Default.Add, contentDescription = "Добавить") }
-                                DropdownMenu(expanded = addMenu, onDismissRequest = { addMenu = false }) {
-                                    DropdownMenuItem(
-                                        text = { Text("Открыть файлы на месте") },
-                                        onClick = {
-                                            addMenu = false
-                                            importCopies = false
-                                            openFiles.launch(arrayOf("application/epub+zip", "application/pdf", "text/plain", "application/xml", "text/xml", "*/*"))
-                                        }
-                                    )
-                                    DropdownMenuItem(
-                                        text = { Text("Скопировать в библиотеку") },
-                                        onClick = {
-                                            addMenu = false
-                                            importCopies = true
-                                            openFiles.launch(arrayOf("application/epub+zip", "application/pdf", "text/plain", "application/xml", "text/xml", "*/*"))
-                                        }
-                                    )
-                                }
-                            }
-                        }
-                    )
-                    if (searchVisible) {
-                        OutlinedTextField(
-                            value = query,
-                            onValueChange = { query = it },
-                            placeholder = { Text("Название, автор, серия…") },
-                            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                            trailingIcon = {
-                                if (query.isNotBlank()) IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, contentDescription = "Очистить") }
-                            },
-                            singleLine = true,
-                            modifier = Modifier.fillMaxWidth().padding(horizontal = 12.dp, vertical = 6.dp)
-                        )
-                    }
+                TopAppBar(title = { Text("OmniReader", style = MaterialTheme.typography.titleLarge) },
+                    colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background),
+                    navigationIcon = { IconButton(onClick = { scope.launch { drawer.open() } }) { Icon(Icons.Default.Menu, "Разделы библиотеки") } },
+                    actions = {
+                        IconButton(onClick = { openTree.launch(null) }) { Icon(Icons.Default.FolderOpen, "Добавить папку") }
+                        IconButton(onClick = { addMenu = true }) { Icon(Icons.Default.Add, "Добавить книги") }
+                    })
+            },
+            bottomBar = {
+                NavigationBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 0.dp) {
+                    NavigationBarItem(selected = section == LibrarySection.CURRENT, onClick = { select(LibrarySection.CURRENT) }, icon = { Icon(Icons.Default.AutoStories, null) }, label = { Text("Читаю") })
+                    NavigationBarItem(selected = section != LibrarySection.CURRENT, onClick = { select(LibrarySection.ALL) }, icon = { Icon(Icons.Default.CollectionsBookmark, null) }, label = { Text("Книги") })
+                    NavigationBarItem(selected = false, onClick = onResearch, icon = { Icon(Icons.Default.FormatQuote, null) }, label = { Text("Заметки") })
+                    NavigationBarItem(selected = false, onClick = onSettings, icon = { Icon(Icons.Default.Tune, null) }, label = { Text("Настройки") })
                 }
             }
         ) { padding ->
-            val filtered = filterBooks(books, section, selectedGroup, query)
-            Box(Modifier.fillMaxSize().padding(padding)) {
-                if (section in groupSections && selectedGroup == null && query.isBlank()) {
-                    GroupList(section, books) { key -> selectedGroup = section to key }
-                } else if (filtered.isEmpty()) {
-                    EmptyLibrary(section, onAdd = {
-                        importCopies = false
-                        openFiles.launch(arrayOf("*/*"))
-                    })
-                } else if (settings.libraryViewMode == LibraryViewMode.GRID) {
-                    LazyVerticalGrid(
-                        columns = GridCells.Adaptive(150.dp),
-                        contentPadding = PaddingValues(6.dp),
-                        modifier = Modifier.fillMaxSize()
-                    ) {
-                        items(filtered, key = { it.id }) { book ->
-                            BookGridCard(book, onOpen = { onOpenBook(book.id) }, onDetails = { onDetails(book.id) })
+            Column(Modifier.fillMaxSize().padding(padding)) {
+                // Search is always visible; each section retains its own filtering semantics.
+                OutlinedTextField(value = query, onValueChange = { query = it }, placeholder = { Text("Найти книгу, автора, серию") },
+                    leadingIcon = { Icon(Icons.Default.Search, null) },
+                    trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { query = "" }) { Icon(Icons.Default.Close, "Очистить поиск") } },
+                    singleLine = true, shape = MaterialTheme.shapes.large,
+                    modifier = Modifier.fillMaxWidth().padding(horizontal = 24.dp, vertical = 8.dp))
+                if (scanState != null) {
+                    LinearProgressIndicator(Modifier.fillMaxWidth())
+                    Text(scanState.orEmpty(), style = MaterialTheme.typography.labelSmall, modifier = Modifier.padding(24.dp, 6.dp), maxLines = 1, overflow = TextOverflow.Ellipsis)
+                }
+                val heading: @Composable () -> Unit = {
+                    Column {
+                        Row(Modifier.fillMaxWidth().padding(start = 24.dp, end = 12.dp, top = 16.dp), verticalAlignment = Alignment.CenterVertically) {
+                            Column(Modifier.weight(1f)) {
+                                Text(groupKey ?: if (home) "Время для книги" else section.label, style = MaterialTheme.typography.headlineLarge)
+                                Text(if (home) "На полках: ${books.size} · Прочитано: ${books.count { it.finished }}" else "Книг: ${filtered.size}", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                            }
+                            IconButton(onClick = { vm.setLibraryView(if (settings.libraryViewMode == LibraryViewMode.GRID) LibraryViewMode.LIST else LibraryViewMode.GRID) }) {
+                                Icon(if (settings.libraryViewMode == LibraryViewMode.GRID) Icons.Default.ViewList else Icons.Default.GridView, "Изменить вид библиотеки")
+                            }
+                            Box {
+                                IconButton(onClick = { sortMenu = true }) { Icon(Icons.Default.Sort, "Сортировка") }
+                                DropdownMenu(sortMenu, onDismissRequest = { sortMenu = false }) {
+                                    LibrarySort.entries.forEach { order ->
+                                        DropdownMenuItem(text = { Text(sortLabel(order)) }, leadingIcon = { if (settings.librarySort == order) Icon(Icons.Default.Check, null) },
+                                            onClick = { sortMenu = false; vm.setLibrarySort(order) })
+                                    }
+                                }
+                            }
                         }
-                    }
-                } else {
-                    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(vertical = 4.dp)) {
-                        items(filtered, key = { it.id }) { book ->
-                            BookListCard(
-                                book = book,
-                                onOpen = { onOpenBook(book.id) },
-                                onDetails = { onDetails(book.id) },
-                                onFavorite = { vm.toggleFavorite(book) },
-                                onWant = { vm.toggleWant(book) },
-                                onFinished = { vm.toggleFinished(book) }
-                            )
+                        if (home && continued != null) ContinueReadingCard(continued, onOpen = { onOpenBook(continued.id) })
+                        Row(Modifier.fillMaxWidth().horizontalScroll(rememberScrollState()).padding(horizontal = 24.dp, vertical = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                            listOf(LibrarySection.ALL, LibrarySection.FAVORITES, LibrarySection.WANT_TO_READ, LibrarySection.FINISHED).forEach { item ->
+                                FilterChip(selected = section == item, onClick = { select(item) }, label = { Text(item.label) })
+                            }
                         }
                     }
                 }
-
-                if (scanState != null) {
-                    Box(
-                        Modifier.fillMaxWidth().align(Alignment.BottomCenter).padding(16.dp)
-                    ) {
-                        androidx.compose.material3.Surface(tonalElevation = 6.dp, shape = MaterialTheme.shapes.medium) {
-                            Text(scanState.orEmpty(), modifier = Modifier.padding(16.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
+                if (grouped) {
+                    heading()
+                    GroupList(section, books) { groupKey = it }
+                } else if (filtered.isEmpty()) {
+                    if (books.isNotEmpty()) heading()
+                    if (query.isNotBlank()) {
+                        Column(Modifier.fillMaxSize().padding(32.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.Center) {
+                            Icon(Icons.Default.SearchOff, null, modifier = Modifier.size(48.dp), tint = MaterialTheme.colorScheme.primary)
+                            Text("Ничего не найдено", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(top = 16.dp))
+                            Text("Попробуйте другое название или автора", style = MaterialTheme.typography.bodyMedium)
+                            TextButton(onClick = { query = "" }) { Text("Сбросить поиск") }
+                        }
+                    } else EmptyLibrary(section, onAdd = { addMenu = true })
+                } else if (settings.libraryViewMode == LibraryViewMode.GRID) {
+                    LazyVerticalGrid(columns = GridCells.Adaptive(152.dp), contentPadding = PaddingValues(bottom = 20.dp), modifier = Modifier.fillMaxSize()) {
+                        item(span = { GridItemSpan(maxLineSpan) }, key = "heading") { heading() }
+                        items(filtered, key = { it.id }) { book ->
+                            Box(Modifier.padding(horizontal = 10.dp)) { BookGridCard(book, { onOpenBook(book.id) }, { onDetails(book.id) }) }
+                        }
+                    }
+                } else {
+                    LazyColumn(Modifier.fillMaxSize(), contentPadding = PaddingValues(bottom = 20.dp)) {
+                        item(key = "heading") { heading() }
+                        items(filtered, key = { it.id }) { book ->
+                            BookListCard(book, { onOpenBook(book.id) }, { onDetails(book.id) }, { vm.toggleFavorite(book) }, { vm.toggleWant(book) }, { vm.toggleFinished(book) })
                         }
                     }
                 }
             }
         }
     }
+    if (addMenu) {
+        ModalBottomSheet(onDismissRequest = { addMenu = false }) {
+            Text("Пополнить библиотеку", style = MaterialTheme.typography.headlineSmall, modifier = Modifier.padding(24.dp, 12.dp))
+            ListItem(headlineContent = { Text("Добавить книги") }, supportingContent = { Text("Сохранить копии в приложении") }, leadingContent = { Icon(Icons.Default.Add, null) }, modifier = Modifier.clickable { addMenu = false; importCopies = true; openFiles.launch(arrayOf("*/*")) })
+            ListItem(headlineContent = { Text("Открыть без копирования") }, supportingContent = { Text("Файлы останутся в исходной папке") }, leadingContent = { Icon(Icons.Default.Description, null) }, modifier = Modifier.clickable { addMenu = false; importCopies = false; openFiles.launch(arrayOf("*/*")) })
+            ListItem(headlineContent = { Text("Сканировать папку") }, supportingContent = { Text("Найти книги, включая вложенные папки") }, leadingContent = { Icon(Icons.Default.FolderOpen, null) }, modifier = Modifier.clickable { addMenu = false; openTree.launch(null) })
+            Spacer(Modifier.height(24.dp))
+        }
+    }
+}
+
+private fun sortLabel(sort: LibrarySort) = when (sort) {
+    LibrarySort.RECENT -> "Недавно открытые"
+    LibrarySort.TITLE -> "По названию"
+    LibrarySort.AUTHOR -> "По автору"
+    LibrarySort.ADDED -> "Сначала новые"
+    LibrarySort.PROGRESS -> "По прогрессу чтения"
 }
 
 private val groupSections = setOf(
@@ -270,43 +202,6 @@ private val groupSections = setOf(
     LibrarySection.FORMATS,
     LibrarySection.FOLDERS
 )
-
-private fun filterBooks(
-    books: List<BookEntity>,
-    section: LibrarySection,
-    group: Pair<LibrarySection, String>?,
-    query: String
-): List<BookEntity> {
-    var out = when (section) {
-        LibrarySection.CURRENT -> books.filter { it.lastOpenedAt != null && !it.finished }.ifEmpty { books.filter { !it.finished }.take(20) }
-        LibrarySection.ALL -> books
-        LibrarySection.FAVORITES -> books.filter { it.favorite }
-        LibrarySection.WANT_TO_READ -> books.filter { it.wantToRead }
-        LibrarySection.FINISHED -> books.filter { it.finished }
-        else -> books
-    }
-    group?.let { (kind, key) ->
-        out = when (kind) {
-            LibrarySection.AUTHORS -> out.filter { key in splitAuthors(it.authors) }
-            LibrarySection.SERIES -> out.filter { it.series == key }
-            LibrarySection.COLLECTIONS -> out.filter { it.collection == key }
-            LibrarySection.FORMATS -> out.filter { it.format == key }
-            LibrarySection.FOLDERS -> out.filter { (it.folderLabel ?: "Без папки") == key }
-            else -> out
-        }
-    }
-    if (query.isNotBlank()) {
-        val q = query.trim().lowercase()
-        out = out.filter {
-            it.title.lowercase().contains(q) ||
-                it.authors.lowercase().contains(q) ||
-                (it.series?.lowercase()?.contains(q) == true) ||
-                (it.collection?.lowercase()?.contains(q) == true) ||
-                it.displayName.lowercase().contains(q)
-        }
-    }
-    return out
-}
 
 @Composable
 private fun GroupList(section: LibrarySection, books: List<BookEntity>, onClick: (String) -> Unit) {
@@ -343,10 +238,14 @@ private fun EmptyLibrary(section: LibrarySection, onAdd: () -> Unit) {
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        Icon(Icons.Default.Book, contentDescription = null)
+        Surface(shape = MaterialTheme.shapes.extraLarge, color = MaterialTheme.colorScheme.primaryContainer) {
+            Icon(Icons.Default.AutoStories, null, modifier = Modifier.padding(28.dp).size(54.dp), tint = MaterialTheme.colorScheme.primary)
+        }
         Spacer(Modifier.height(12.dp))
-        Text(if (section == LibrarySection.ALL || section == LibrarySection.CURRENT) "Добавь первую книгу" else "В этом разделе пока нет книг", style = MaterialTheme.typography.titleMedium)
-        Spacer(Modifier.height(16.dp))
+        Text(if (section == LibrarySection.ALL || section == LibrarySection.CURRENT) "Ваша библиотека начинается здесь" else "В этом разделе пока нет книг", style = MaterialTheme.typography.headlineSmall, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Spacer(Modifier.height(12.dp))
+        Text("Добавьте книги с устройства или выберите папку. Читайте в своём темпе — место остановки сохранится.", style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant, textAlign = androidx.compose.ui.text.style.TextAlign.Center)
+        Spacer(Modifier.height(24.dp))
         Button(onClick = onAdd) { Text("Выбрать файл") }
     }
 }
