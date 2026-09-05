@@ -1,0 +1,8 @@
+Local validation, 2026-09-05 UTC
+python3 tools/verify-source.py: PASS (XML 6, Kotlin/KTS lexical check 67; no duplicate imports; version 0.7.0 / 7)
+python3 tools/test-document-migration.py: PASS
+Unchanged compared to baseline 0.6.0: ReaderScreen.kt and 10 parser files.
+gradle testDebugUnitTest --stacktrace: exit 127, /bin/bash: gradle: command not found
+gradle lintDebug --stacktrace: exit 127, /bin/bash: gradle: command not found
+gradle assembleDebug --stacktrace: exit 127, /bin/bash: gradle: command not found
+No APK, Android lint report, JVM test results, device QA results or native alignment results were produced.

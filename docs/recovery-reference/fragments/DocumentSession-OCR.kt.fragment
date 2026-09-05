@@ -1,0 +1,34 @@
+    private val textMutex=Mutex()
+    suspend fun text(page: Int): DocumentTextPage = textMutex.withLock {
+        val native=use { source -> textCache[page] ?: source.text(page) }
+        val result=if(native.text.isNotBlank() || native.recognized) native else {
+            withContext(Dispatchers.IO){store.read(page)} ?: recognize(page)
+        }
+        use {
+            result.words
+            textCache[page]=result
+            while(textCache.size>6 || textCache.values.sumOf{it.text.length.toLong()*2+it.glyphs.size*64L}>4_000_000) {
+                textCache.remove(textCache.keys.first())
+            }
+        }
+        result
+    }
+    private suspend fun recognize(page: Int): DocumentTextPage {
+        val size=sizes[page]
+        val scale=minOf(2400.0/maxOf(size.width,size.height),kotlin.math.sqrt(3_000_000.0/(size.width*size.height)))
+        val width=(size.width*scale).toInt().coerceAtLeast(1)
+        val height=(size.height*scale).toInt().coerceAtLeast(1)
+        val image=withContext(Dispatchers.Default){Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888)}
+        try {
+            val canvas=android.graphics.Canvas(image)
+            for(y in 0 until height step 512) for(x in 0 until width step 512) {
+                currentCoroutineContext().ensureActive()
+                val bitmap=render(TileKey(page,width,height,x,y,minOf(512,width-x),minOf(512,height-y)))
+                try{withContext(Dispatchers.Default){canvas.drawBitmap(bitmap,x.toFloat(),y.toFloat(),null)}}finally{bitmap.recycle()}
+            }
+            val result=ocr.recognize(page,size,image)
+            currentCoroutineContext().ensureActive()
+            withContext(Dispatchers.IO){store.write(result)}
+            return result
+        } finally {image.recycle()}
+    }

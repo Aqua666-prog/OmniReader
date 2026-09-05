@@ -63,17 +63,10 @@ fun ReaderApp(container: AppContainer) {
                 onSettings = { route = Route.SETTINGS.name }
             )
 
-            Route.READER -> {
-                val vm: ReaderViewModel = viewModel(
-                    key = "reader_$bookId",
-                    factory = AppViewModelFactory(container, AppViewModelFactory.Kind.READER, bookId)
-                )
-                ReaderScreen(
-                    vm = vm,
-                    initialBlock = readerStartBlock.takeIf { it >= 0 },
-                    onBack = { route = Route.LIBRARY.name }
-                )
-            }
+            Route.READER -> ReadingDestination(
+                container, bookId, readerStartBlock.takeIf { it >= 0 },
+                onBack = { route = Route.LIBRARY.name }
+            )
 
             Route.DETAILS -> {
                 val vm: DetailsViewModel = viewModel(

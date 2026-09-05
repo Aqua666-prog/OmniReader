@@ -110,6 +110,9 @@ fun SettingsScreen(vm: LibraryViewModel, onBack: () -> Unit) {
                 }
                 Text("Цвет страницы настраивается отдельно от библиотеки.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
             }
+            SettingsSection("PDF и DjVu") {
+                com.sergey.reader.ui.document.DocumentSettings(settings.document, vm::setDocumentOptions)
+            }
             SettingsSection("Чтение", initiallyExpanded = true) {
                 Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                     Text("Не выключать экран", modifier = Modifier.weight(1f))

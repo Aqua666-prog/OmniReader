@@ -1,0 +1,49 @@
+    private var dragX=0f
+    private var dragY=0f
+    private val edgeScroll=object : Runnable {
+        override fun run() {
+            if(handle==0 || disposed)return
+            val edge=48*density
+            val delta=when{dragY<edge -> -18*density;dragY>height-edge -> 18*density;else -> 0f}
+            if(delta!=0f) layout?.let { l ->
+                transform=transform.copy(scrollY=transform.scrollY+delta).constrained(l.size,viewport)
+                changed();dragHandle(dragX,dragY)
+            }
+            postDelayed(this,32)
+        }
+    }
+
+    private fun handles(): List<DPoint> {
+        val parts=selection?.parts?.filter{it.bounds.isNotEmpty()} ?: return emptyList()
+        if(parts.isEmpty())return emptyList()
+        return listOf(parts.first() to parts.first().bounds.first(),parts.last() to parts.last().bounds.last()).map { (part,box) ->
+            val p=layout?.pages?.firstOrNull{it.index==part.page.pageIndex}
+            if(p==null) DPoint(-1e9,-1e9) else transform.toScreen(p.toLayout(DPoint(box.center.x,box.bottom)))
+        }
+    }
+
+    private fun dragHandle(x: Float,y: Float) {
+        dragX=x;dragY=y
+        if(selectionJob?.isActive==true)return
+        val selected=selection ?: return
+        val p=layout?.nearest(transform.toDocument(DPoint(x.toDouble(),y.toDouble()))) ?: return
+        val point=p.toPage(transform.toDocument(DPoint(x.toDouble(),y.toDouble())))
+        val dragging=handle
+        if(dragging==0)return
+        selectionJob=scope.launch {
+            onBusy(true)
+            try {
+                val page=session.text(p.index)
+                val word=page.nearestWord(point) ?: return@launch
+                val start=DocumentEndpoint(selected.page.pageIndex,selected.start)
+                val last=selected.parts.last()
+                val end=DocumentEndpoint(last.page.pageIndex,last.end)
+                val moving=DocumentEndpoint(p.index,if(dragging==1)word.start else word.end)
+                if((dragging==1 && moving>=end)||(dragging==2 && moving<=start))return@launch
+                selection=DocumentSelectionRange.load(if(dragging==1)moving else start,if(dragging==2)moving else end,session::text)
+                onSelection(selection);invalidate()
+            } catch(cancelled:CancellationException){throw cancelled}
+            catch(error:Exception){onMessage(error.message ?: "Не удалось расширить выделение")}
+            finally{onBusy(false)}
+        }
+    }

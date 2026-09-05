@@ -15,12 +15,15 @@ import androidx.sqlite.db.SupportSQLiteDatabase
         BookmarkEntity::class,
         AnnotationEntity::class,
         DictionaryEntryEntity::class,
-        BookReadingProfileEntity::class
+        BookReadingProfileEntity::class,
+        DocumentPositionEntity::class,
+        DocumentMarkEntity::class
     ],
-    version = 4,
+    version = 5,
     exportSchema = false
 )
 abstract class ReaderDatabase : RoomDatabase() {
+    abstract fun documentDao(): DocumentDao
     abstract fun bookDao(): BookDao
     abstract fun contentDao(): ContentDao
     abstract fun bookmarkDao(): BookmarkDao
@@ -106,13 +109,23 @@ abstract class ReaderDatabase : RoomDatabase() {
             }
         }
 
+        val MIGRATION_4_5 = object : Migration(4, 5) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("CREATE TABLE IF NOT EXISTS document_positions (bookId INTEGER NOT NULL PRIMARY KEY, pageIndex INTEGER NOT NULL, centerX REAL NOT NULL, centerY REAL NOT NULL, zoom REAL NOT NULL, updatedAt INTEGER NOT NULL, FOREIGN KEY(bookId) REFERENCES books(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_document_positions_bookId ON document_positions(bookId)")
+                db.execSQL("CREATE TABLE IF NOT EXISTS document_marks (annotationId INTEGER NOT NULL PRIMARY KEY, bookId INTEGER NOT NULL, pageIndex INTEGER NOT NULL, boundsJson TEXT NOT NULL, color INTEGER NOT NULL, FOREIGN KEY(annotationId) REFERENCES annotations(id) ON UPDATE NO ACTION ON DELETE CASCADE, FOREIGN KEY(bookId) REFERENCES books(id) ON UPDATE NO ACTION ON DELETE CASCADE)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_document_marks_bookId ON document_marks(bookId)")
+                db.execSQL("CREATE INDEX IF NOT EXISTS index_document_marks_bookId_pageIndex ON document_marks(bookId,pageIndex)")
+            }
+        }
+
         fun get(context: Context): ReaderDatabase = instance ?: synchronized(this) {
             instance ?: Room.databaseBuilder(
                 context.applicationContext,
                 ReaderDatabase::class.java,
                 "reader.db"
             )
-                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4)
+                .addMigrations(MIGRATION_1_2, MIGRATION_2_3, MIGRATION_3_4, MIGRATION_4_5)
                 .build()
                 .also { instance = it }
         }

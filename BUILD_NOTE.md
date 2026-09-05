@@ -1,13 +1,14 @@
-# Проверка OmniReader 0.6.0
+# OmniReader 0.8.0 — build status
 
-В текущей среде есть Java 17, но нет Gradle, Kotlin-компилятора и Android SDK. Попытка обращения к серверу дистрибутива Gradle не была выполнена из-за ограничения сетевого доступа. Поэтому `testDebugUnitTest`, `lintDebug`, `assembleDebug` и инструментальные тесты не запускались. APK не собран.
+Это архив исходников после восстановления и завершения работ поверх 0.7.0. По просьбе пользователя APK в этой сессии **не собирался**.
 
-Проверки исходников и упаковки перечислены в `docs/QA_0.6.0.md`. Проверка XML, структуры и лексического баланса Kotlin не заменяет Kotlin-компиляцию, проверку сигнатур Compose и запуск на Android.
+Что проверено локально без Android toolchain:
 
-Добавлены девять JVM-тестов `LibraryQueryTest`. Они покрывают поиск с несколькими словами и «е»/«ё», фильтрацию, группировку, сортировку и отсутствие обрезания списка. Эти тесты в данной среде не выполнялись.
+- `python3 tools/verify-source.py` — XML, лексическая целостность Kotlin/KTS, дубли imports, версия;
+- `python3 tools/test-document-migration.py` — миграция Room 4→5, Unicode и foreign keys;
+- чистая Kotlin-часть DocumentGeometry / DocumentTextLayer / DocumentSearchNavigator / DocumentErrors компилируется `kotlinc` со служебными Android-stub типами.
+- отдельный pure-Kotlin smoke проверяет wrap-around поиска, навигацию за пределами 500 результатов, Unicode/RTL межстраничное выделение и лимит Clipboard с межстраничным разделителем.
 
-В CI добавлен `lintDebug` и выгрузка отчётов. Конфигурация зависимостей унаследована из входного архива: AGP 9.3.2, Kotlin 2.4.10, KSP 2.3.10, Compose BOM 2026.06.01, Gradle 9.5.0, Room 2.8.4. Доступность этих версий и успешное разрешение всех зависимостей в этой сессии не подтверждены.
+В текущей среде нет Gradle и Android SDK, поэтому полный Android compile, lint, JVM Gradle tests и instrumented tests здесь не запускались. Это честно оставлено на штатный GitHub Actions/Android environment; CI также проверяет фактически упакованные `.so` на 16 KB page-size compatibility.
 
-Сборка требует доступа к Google Maven, Maven Central, Gradle Plugin Portal, JitPack и GitHub для закреплённого DjVu AAR. Проверка контрольной суммы DjVu AAR сохранена.
-
-Данные приложения: сохранены applicationId и Room schema v4; новые параметры записываются в дополнительные ключи DataStore. Существующее предпочтение вида библиотеки сохраняется; сетка становится значением по умолчанию для новых установок.
+Подробности реализации и оставшиеся device-level проверки: `docs/DOCUMENT_VIEWER.md` и `docs/DOCUMENT_QA.md`.

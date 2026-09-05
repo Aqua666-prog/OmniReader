@@ -17,8 +17,8 @@ android {
         applicationId = "com.sergey.reader"
         minSdk = 26
         targetSdk = 36
-        versionCode = 6
-        versionName = "0.6.0"
+        versionCode = 8
+        versionName = "0.8.0"
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
@@ -96,6 +96,46 @@ val prepareDjvuAar = tasks.register("prepareDjvuAar") {
     }
 }
 
+// Pinned offline OCR models. They are downloaded only at build time, verified as Git blobs,
+// then packaged into the APK assets; runtime OCR never needs the network.
+val ocrModelHashes = mapOf(
+    "eng" to "bbef4675053b5b468cdb477053e28b1c698ba08e",
+    "rus" to "b146cb2263acbc6383f8e92ea0ce759537687bb8",
+    "heb" to "7356caf3cddc9c867fe6727e17726727b8284608",
+    "yid" to "6349588bbabf99f8a812e8231c98c015ea7b60c6",
+    "ara" to "c8d129c67821c1592cac46836686b057ecc203dc",
+)
+val ocrModelsCommit = "87416418657359cb625c412a48b6e1d6d41c29bd"
+val ocrAssets = layout.buildDirectory.dir("generated/ocrAssets")
+val prepareOcrModels = tasks.register("prepareOcrModels") {
+    inputs.properties(ocrModelHashes)
+    outputs.dir(ocrAssets)
+    doLast {
+        val directory = ocrAssets.get().dir("tessdata").asFile.apply { mkdirs() }
+        for ((language, hash) in ocrModelHashes) {
+            val target = File(directory, "$language.traineddata")
+            fun valid(file: File): Boolean = file.isFile && runCatching { gitBlobSha1(file) == hash }.getOrDefault(false)
+            if (valid(target)) continue
+            val temp = File(directory, "$language.part")
+            temp.delete()
+            try {
+                val url = URI("https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/$ocrModelsCommit/$language.traineddata").toURL()
+                val connection = url.openConnection().apply { connectTimeout = 30_000; readTimeout = 120_000 }
+                connection.getInputStream().buffered().use { input ->
+                    temp.outputStream().buffered().use { output -> input.copyTo(output) }
+                }
+                check(valid(temp)) { "OCR model checksum mismatch: $language" }
+                if (target.exists()) check(target.delete()) { "Unable to replace OCR model: $language" }
+                check(temp.renameTo(target)) { "Unable to place OCR model: $language" }
+            } finally {
+                temp.delete()
+            }
+        }
+    }
+}
+android.sourceSets.getByName("main").assets.srcDir(ocrAssets)
+tasks.named("preBuild").configure { dependsOn(prepareOcrModels) }
+
 dependencies {
     val composeBom = platform("androidx.compose:compose-bom:2026.06.01")
     implementation(composeBom)
@@ -122,6 +162,12 @@ dependencies {
     implementation("androidx.documentfile:documentfile:1.1.0")
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
+
+    // PDFium rendering + glyph coordinates; version reviewed at tag 2.0.3.
+    implementation("io.legere:pdfiumandroid:2.0.3")
+
+    // Tesseract 5.5.1 wrapper; official 4.9.0 JitPack coordinates from the upstream README.
+    implementation("cz.adaptech.tesseract4android:tesseract4android:4.9.0")
 
     // Extended document/archive formats
     implementation("com.github.junrar:junrar:8.1.1")

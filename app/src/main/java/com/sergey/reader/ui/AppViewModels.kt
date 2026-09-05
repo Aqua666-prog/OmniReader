@@ -126,6 +126,7 @@ class LibraryViewModel(private val c: AppContainer) : ViewModel() {
     fun toggleFavorite(book: BookEntity) = viewModelScope.launch { c.books.setFavorite(book.id, !book.favorite) }
     fun toggleWant(book: BookEntity) = viewModelScope.launch { c.books.setWantToRead(book.id, !book.wantToRead) }
     fun toggleFinished(book: BookEntity) = viewModelScope.launch { c.books.setFinished(book.id, !book.finished) }
+    fun setDocumentOptions(value: com.sergey.reader.document.DocumentOptions) = viewModelScope.launch { c.settings.setDocumentOptions(value) }
     fun setLibrarySort(value: LibrarySort) = viewModelScope.launch { c.settings.setLibrarySort(value) }
     fun setAppAppearance(value: AppAppearance) = viewModelScope.launch { c.settings.setAppAppearance(value) }
     fun setLibraryView(mode: LibraryViewMode) = viewModelScope.launch { c.settings.setLibraryView(mode) }

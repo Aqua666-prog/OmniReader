@@ -6,6 +6,7 @@ import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.floatPreferencesKey
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
+import com.sergey.reader.document.*
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.map
 
@@ -19,6 +20,7 @@ enum class LibrarySort { RECENT, TITLE, AUTHOR, ADDED, PROGRESS }
 enum class ReaderMode { VERTICAL, PAGED }
 
 data class ReaderSettings(
+    val document: DocumentOptions = DocumentOptions(),
     val fontSizeSp: Float = 22f,
     val lineHeight: Float = 1.38f,
     val horizontalPaddingDp: Float = 28f,
@@ -49,6 +51,13 @@ data class ReaderSettings(
 
 class ReaderSettingsRepository(private val context: Context) {
     private object Keys {
+        val docMode = stringPreferencesKey("doc_mode")
+        val docOpen = stringPreferencesKey("doc_open_scale")
+        val docMax = floatPreferencesKey("doc_max_zoom")
+        val docDouble = booleanPreferencesKey("doc_double_tap")
+        val docTap = booleanPreferencesKey("doc_tap_controls")
+        val docSave = booleanPreferencesKey("doc_save_zoom")
+        val docQuality = booleanPreferencesKey("doc_high_quality")
         val librarySort = stringPreferencesKey("library_sort")
         val appAppearance = stringPreferencesKey("app_appearance")
         val keepScreenOn = booleanPreferencesKey("keep_screen_on")
@@ -73,6 +82,15 @@ class ReaderSettingsRepository(private val context: Context) {
 
     val settings: Flow<ReaderSettings> = context.readerDataStore.data.map { p ->
         ReaderSettings(
+            document = DocumentOptions(
+                mode = p[Keys.docMode]?.let { runCatching { DocumentMode.valueOf(it) }.getOrNull() } ?: DocumentMode.CONTINUOUS,
+                openingScale = p[Keys.docOpen]?.let { runCatching { DocumentOpeningScale.valueOf(it) }.getOrNull() } ?: DocumentOpeningScale.WIDTH,
+                maxZoom = p[Keys.docMax]?.takeIf { it.isFinite() }?.toDouble()?.coerceIn(10.0,15.0) ?: 15.0,
+                doubleTapZoom = p[Keys.docDouble] ?: true,
+                tapControls = p[Keys.docTap] ?: true,
+                saveZoom = p[Keys.docSave] ?: true,
+                highQuality = p[Keys.docQuality] ?: true
+            ),
             fontSizeSp = p[Keys.fontSize] ?: 22f,
             lineHeight = p[Keys.lineHeight] ?: 1.38f,
             horizontalPaddingDp = p[Keys.padding] ?: 28f,
@@ -96,6 +114,15 @@ class ReaderSettingsRepository(private val context: Context) {
         )
     }
 
+    suspend fun setDocumentOptions(value: DocumentOptions) { context.readerDataStore.edit {
+        it[Keys.docMode] = value.mode.name
+        it[Keys.docOpen] = value.openingScale.name
+        it[Keys.docMax] = value.maxZoom.coerceIn(10.0,15.0).toFloat()
+        it[Keys.docDouble] = value.doubleTapZoom
+        it[Keys.docTap] = value.tapControls
+        it[Keys.docSave] = value.saveZoom
+        it[Keys.docQuality] = value.highQuality
+    } }
     suspend fun setLibrarySort(value: LibrarySort) { context.readerDataStore.edit { it[Keys.librarySort] = value.name } }
     suspend fun setAppAppearance(value: AppAppearance) { context.readerDataStore.edit { it[Keys.appAppearance] = value.name } }
     suspend fun setKeepScreenOn(value: Boolean) { context.readerDataStore.edit { it[Keys.keepScreenOn] = value } }

@@ -32,8 +32,13 @@ jobs:
         with:
           gradle-version: '9.5.0'
 
-      - name: Fetch pinned DjVu backend
-        run: gradle prepareDjvuAar --stacktrace
+      - name: Fetch pinned native backend and OCR models
+        run: gradle prepareDjvuAar prepareOcrModels --stacktrace
+
+      - name: Source and migration checks
+        run: |
+          python3 tools/verify-source.py
+          python3 tools/test-document-migration.py
 
       - name: Unit tests
         run: gradle testDebugUnitTest --stacktrace
@@ -44,10 +49,15 @@ jobs:
       - name: Build debug APK
         run: gradle assembleDebug --stacktrace
 
+      - name: Audit packaged native libraries
+        run: |
+          python3 tools/audit-native-apk.py app/build/outputs/apk/debug/app-debug.apk
+          "$ANDROID_HOME/build-tools/36.0.0/zipalign" -c -P 16 -v 4 app/build/outputs/apk/debug/app-debug.apk
+
       - name: Upload APK
         uses: actions/upload-artifact@v4
         with:
-          name: OmniReader-0.6.0-debug-apk
+          name: OmniReader-0.8.0-debug-apk
           path: app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
 

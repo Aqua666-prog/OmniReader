@@ -1,0 +1,41 @@
+OmniReader 0.8.0 — local source validation
+
+Executed in the recovery/completion environment without Android SDK/Gradle:
+
+1. python3 tools/verify-source.py
+   PASS
+   - XML: 6 parsed
+   - Kotlin/KTS lexical delimiter check: 73 files
+   - no duplicate explicit imports
+   - versionName 0.8.0 / versionCode 8 verified
+
+2. python3 tools/test-document-migration.py
+   PASS
+   - Room migration 4→5 SQL preserves existing rows and Unicode
+   - document viewport state is saved
+   - new document rows cascade with the parent book
+
+3. Pure Kotlin compile smoke (kotlinc + a minimal android.graphics.Bitmap stub)
+   PASS
+   - DocumentGeometry.kt
+   - DocumentTextLayer.kt
+   - DocumentSearchNavigator.kt
+   - DocumentErrors.kt
+
+4. Pure behavior smoke
+   PASS
+   - a single search hit is not returned again after wrap-around
+   - streaming navigation continues beyond the 500-result UI list cap
+   - multi-page Unicode/RTL selection preserves backend order
+   - inserted page separators count toward the Clipboard size cap
+
+Not executed here by design/environment:
+- APK assembly (explicitly not requested)
+- full Android compilation
+- Android lint
+- Gradle JVM test task
+- instrumented/device tests
+- real-device rendering/gesture/performance QA
+- packaged .so 16 KB alignment audit
+
+The GitHub Actions workflow remains configured to perform the Android-side build/test/lint/native audit when the source is pushed to a repository.

@@ -27,6 +27,9 @@ interface BookDao {
     @Query("UPDATE books SET progress=:progress, positionBlock=:positionBlock, positionOffset=:positionOffset, totalBlocks=:totalBlocks, lastOpenedAt=:lastOpenedAt WHERE id=:bookId")
     suspend fun updateProgress(bookId: Long, progress: Float, positionBlock: Int, positionOffset: Int, totalBlocks: Int, lastOpenedAt: Long)
 
+    @Query("UPDATE books SET progress=:progress,lastOpenedAt=:opened WHERE id=:bookId")
+    suspend fun updateDocumentProgress(bookId: Long, progress: Float, opened: Long)
+
     @Query("UPDATE books SET favorite=:value WHERE id=:bookId")
     suspend fun setFavorite(bookId: Long, value: Boolean)
 

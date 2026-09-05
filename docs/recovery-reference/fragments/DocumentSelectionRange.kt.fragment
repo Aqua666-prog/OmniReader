@@ -1,0 +1,22 @@
+/** Endpoints are UTF-16 positions in backend order; rectangles never determine RTL order. */
+data class DocumentEndpoint(val page: Int,val offset: Int) : Comparable<DocumentEndpoint> {
+    override fun compareTo(other: DocumentEndpoint): Int = compareValuesBy(this,other,{it.page},{it.offset})
+}
+object DocumentSelectionRange {
+    const val MAX_CHARACTERS=200_000 // Keep Android Clipboard Binder transactions comfortably below 1 MiB.
+    suspend fun load(a: DocumentEndpoint,b: DocumentEndpoint,read: suspend (Int)->DocumentTextPage): DocumentSelection {
+        val start=minOf(a,b);val end=maxOf(a,b)
+        val parts=mutableListOf<DocumentSelection>()
+        var characters=0;var geometry=0L
+        for(index in start.page..end.page) {
+            kotlinx.coroutines.currentCoroutineContext().ensureActive()
+            val page=read(index)
+            val from=if(index==start.page) start.offset.coerceIn(0,page.text.length) else 0
+            val to=if(index==end.page) end.offset.coerceIn(from,page.text.length) else page.text.length
+            characters+=to-from+1;geometry+=page.glyphs.size*64L
+            require(characters<=MAX_CHARACTERS && geometry<=16_000_000){"Выделение слишком велико для буфера обмена. Выберите меньший диапазон."}
+            parts+=DocumentSelection(page,from,to)
+        }
+        return parts.first().copy(following=parts.drop(1))
+    }
+}

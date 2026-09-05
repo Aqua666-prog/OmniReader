@@ -1,0 +1,34 @@
+// Added inside dependencies:
+// implementation("com.github.adaptech-cz.Tesseract4Android:tesseract4android:4.9.0")
+
+// Pinned offline models. Executed by normal Gradle tasks; no runtime network OCR.
+val ocrModelHashes = mapOf(
+    "eng" to "bbef4675053b5b468cdb477053e28b1c698ba08e",
+    "rus" to "b146cb2263acbc6383f8e92ea0ce759537687bb8",
+    "heb" to "7356caf3cddc9c867fe6727e17726727b8284608",
+    "yid" to "6349588bbabf99f8a812e8231c98c015ea7b60c6",
+    "ara" to "c8d129c67821c1592cac46836686b057ecc203dc"
+)
+val ocrAssets = layout.buildDirectory.dir("generated/ocrAssets")
+val prepareOcrModels = tasks.register("prepareOcrModels") {
+    inputs.properties(ocrModelHashes)
+    outputs.dir(ocrAssets)
+    doLast {
+        val directory = ocrAssets.get().dir("tessdata").asFile.apply { mkdirs() }
+        for ((language, hash) in ocrModelHashes) {
+            val target = File(directory, "$language.traineddata")
+            if (target.isFile && gitBlobSha1(target) == hash) continue
+            val temp = File(directory, "$language.part")
+            try {
+                val url = URI("https://raw.githubusercontent.com/tesseract-ocr/tessdata_fast/87416418657359cb625c412a48b6e1d6d41c29bd/$language.traineddata").toURL()
+                val connection = url.openConnection().apply { connectTimeout = 30000; readTimeout = 60000 }
+                connection.getInputStream().use { input -> temp.outputStream().use { input.copyTo(it) } }
+                check(gitBlobSha1(temp) == hash) { "OCR model checksum mismatch: $language" }
+                if (target.exists()) check(target.delete())
+                check(temp.renameTo(target))
+            } finally { temp.delete() }
+        }
+    }
+}
+android.sourceSets.getByName("main").assets.srcDir(ocrAssets)
+tasks.named("preBuild").configure { dependsOn(prepareOcrModels) }
