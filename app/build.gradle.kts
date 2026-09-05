@@ -11,7 +11,7 @@ plugins {
 
 android {
     namespace = "com.sergey.reader"
-    compileSdk = 36
+    compileSdk = 37
 
     defaultConfig {
         applicationId = "com.sergey.reader"
