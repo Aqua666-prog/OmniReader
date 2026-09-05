@@ -133,7 +133,7 @@ val prepareOcrModels = tasks.register("prepareOcrModels") {
         }
     }
 }
-android.sourceSets.getByName("main").assets.srcDir(ocrAssets)
+android.sourceSets.getByName("main").assets.srcDir(ocrAssets.get().asFile)
 tasks.named("preBuild").configure { dependsOn(prepareOcrModels) }
 
 dependencies {
