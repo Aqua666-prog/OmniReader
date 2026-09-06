@@ -3,3 +3,6 @@
 Исходники Document Viewer доведены поверх 0.7.0: офлайн OCR, межстраничное выделение, потоковая навигация по поиску в больших PDF, OCR-кэш, защита от race condition и повторяющихся ошибок рендера, Unicode/RTL проверки и дополнительные тесты.
 
 APK по запросу пользователя не собирался. Полный Android compile/lint/instrumented tests и визуальная проверка на устройстве должны пройти в CI/Android-среде перед выпуском. Старый ReaderScreen и парсеры reflowable-форматов не переделывались.
+
+
+Post-CI fix: устранён `BreakIterator` receiver-shadowing, из-за которого `DocumentTextPage.words` был пустым и координатное выделение не находило слова; добавлены Unicode/hit-test regressions. AGP 9 SourceSet Provider исправлен без compatibility-флага. Финальный CI этого исправленного архива ещё требуется.

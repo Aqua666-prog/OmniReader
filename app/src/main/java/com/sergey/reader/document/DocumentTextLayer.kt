@@ -17,7 +17,12 @@ data class DocumentTextPage(
     val recognized: Boolean = false,
 ) {
     val words: List<PdfTextWord> by lazy {
-        val iterator = BreakIterator.getWordInstance(Locale.ROOT).apply { setText(text) }
+        // Do not call setText(text) inside apply { ... }: BreakIterator exposes its own
+        // synthetic `text` property (getText()), which shadows DocumentTextPage.text and leaves
+        // the iterator on its empty CharacterIterator. That made `words` empty and every hit-test
+        // return null even when glyph coordinates were correct.
+        val iterator = BreakIterator.getWordInstance(Locale.ROOT)
+        iterator.setText(text)
         val out = mutableListOf<PdfTextWord>()
         var glyphIndex = 0
         var start = iterator.first()

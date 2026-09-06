@@ -199,7 +199,7 @@ class DocumentSession internal constructor(
                     } else {
                         DjvuDocumentBackend(context, uri)
                     }
-                    require(owned!!.sizes.isNotEmpty()) { "В документе нет страниц" }
+                    require(requireNotNull(owned).sizes.isNotEmpty()) { "В документе нет страниц" }
                 }
                 currentCoroutineContext().ensureActive()
                 return DocumentSession(

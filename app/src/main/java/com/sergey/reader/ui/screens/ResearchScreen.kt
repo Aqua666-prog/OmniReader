@@ -38,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -50,6 +51,9 @@ import com.sergey.reader.data.db.AnnotationType
 import com.sergey.reader.data.db.BookmarkEntity
 import com.sergey.reader.data.db.DictionaryEntryEntity
 import com.sergey.reader.ui.ResearchViewModel
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.launch
+import kotlinx.coroutines.withContext
 import java.text.DateFormat
 import java.util.Date
 
@@ -66,17 +70,22 @@ fun ResearchScreen(
     val dictionary by vm.dictionary.collectAsStateWithLifecycle()
     val context = LocalContext.current
 
+    val exportScope = rememberCoroutineScope()
     var pendingExport by remember { mutableStateOf("") }
     var exportMenuVisible by remember { mutableStateOf(false) }
     fun writeExport(uri: Uri?) {
-        if (uri != null && pendingExport.isNotBlank()) {
-            runCatching {
-                context.contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use { writer ->
-                    writer.write(pendingExport)
-                } ?: error("Не удалось открыть файл")
+        val content = pendingExport
+        pendingExport = ""
+        if (uri == null || content.isBlank()) return
+        exportScope.launch {
+            withContext(Dispatchers.IO) {
+                runCatching {
+                    context.contentResolver.openOutputStream(uri)?.bufferedWriter(Charsets.UTF_8)?.use { writer ->
+                        writer.write(content)
+                    } ?: error("Не удалось открыть файл")
+                }
             }
         }
-        pendingExport = ""
     }
     val exportMarkdown = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/markdown")) { writeExport(it) }
     val exportText = rememberLauncherForActivityResult(ActivityResultContracts.CreateDocument("text/plain")) { writeExport(it) }

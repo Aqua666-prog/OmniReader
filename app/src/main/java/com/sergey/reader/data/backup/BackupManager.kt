@@ -2,6 +2,7 @@ package com.sergey.reader.data.backup
 
 import android.content.Context
 import android.net.Uri
+import com.sergey.reader.BuildConfig
 import com.sergey.reader.data.db.ReaderDatabase
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -33,7 +34,7 @@ class BackupManager(
                         buildString {
                             appendLine("Reader Backup")
                             appendLine("format=1")
-                            appendLine("appVersion=0.3.0")
+                            appendLine("appVersion=${BuildConfig.VERSION_NAME}")
                             appendLine("createdAt=${System.currentTimeMillis()}")
                         }.toByteArray()
                     )
@@ -83,10 +84,12 @@ class BackupManager(
                 "Неподдерживаемый формат резервной копии"
             }
             require(File(pending, "database/$DB_NAME").isFile) { "В архиве нет базы Reader" }
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .edit()
-                .putBoolean(KEY_PENDING, true)
-                .apply()
+            check(
+                context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+                    .edit()
+                    .putBoolean(KEY_PENDING, true)
+                    .commit()
+            ) { "Не удалось запланировать восстановление резервной копии" }
         }
     }
 
@@ -127,7 +130,7 @@ class BackupManager(
             val pending = File(context.filesDir, PENDING_DIR)
             val stagedDb = File(pending, "database/$DB_NAME")
             if (!stagedDb.isFile) {
-                prefs.edit().remove(KEY_PENDING).apply()
+                prefs.edit().remove(KEY_PENDING).commit()
                 pending.deleteRecursively()
                 return false
             }
@@ -154,7 +157,9 @@ class BackupManager(
                     if (source.exists()) source.copyRecursively(target, overwrite = true)
                 }
 
-                prefs.edit().remove(KEY_PENDING).commit()
+                check(prefs.edit().remove(KEY_PENDING).commit()) {
+                    "Не удалось завершить восстановление резервной копии"
+                }
                 pending.deleteRecursively()
                 true
             }.getOrElse { false }

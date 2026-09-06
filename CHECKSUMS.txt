@@ -1,11 +1,11 @@
 8e75d24704655ec491c1eee5e43baf59ac87db6845c879aaf48985040ec4ff54  .github/workflows/android.yml
 4e847fa4965b7fba6c020d4b97af4914300f1362ebdff6bda693d93f7909eac4  .gitignore
-a3401ca5b58987eaca871a6339c5142df4621e0c62496c976430bcf877f0fb29  BUILD_NOTE.md
-1e67ae8068473c2f17f39f6913ed2ef150d76c4616e4c623d068a2b8b3d5318c  CHANGELOG.md
+baae255149dd305240b587f3768b8baf238f58dc2a84103d78190384788f0108  BUILD_NOTE.md
+2ec47dbb2378a676977ba1076e65b923072fe896305c630d498b9fbf7413e1bc  CHANGELOG.md
 a61fc744a7e1352ed8769e0c9c1ce935b2433414fe68fb411069379d17f5a2ba  README.md
-75e218b97e57b11f3870ec35dc9dc2524f5903d8751d61da5b13ca96126a6d88  STATUS.md
+4f8ed7b0279be21d5019c7be199190fbebc19415d4a3ee9c13352120a1f3d511  STATUS.md
 6141c20a25ad0b018cfa3bc2ba78d75f9e50ba15681c03060e8a556147beff31  THIRD_PARTY_NOTICES.md
-ba079159e2e21094b66402abafed82b76a4328b7863edc7685be0c0ef5f3bf78  app/build.gradle.kts
+a014f6427a770ebebbcf6cffac05a83d3fa78b2b241b8d246bc9299c145d9d5b  app/build.gradle.kts
 e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  app/libs/.gitkeep
 77ce455f59d464cbec328dbd2d35a0bd555ab5090f3932d17b4ff7e64adc19a8  app/proguard-rules.pro
 1d92b9dc003b223c3e09e1a0a043895146ac8b245fb7e0e2ce4e714ea8c0924f  app/src/androidTest/java/com/sergey/reader/document/DocumentOcrTest.kt
@@ -14,7 +14,7 @@ e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855  app/libs/.gitk
 a4b7eaec6f60b6698c152e150ee7836a1f2daaf7cc5016140f3482fad74b0e90  app/src/main/AndroidManifest.xml
 f480c72dcb2882bcec913a93f668a4b562794d59bcbf2920ba2778820984badc  app/src/main/java/com/sergey/reader/MainActivity.kt
 f381a4badfa81d882ffc104e3d880075b87b0fe2efd89667194cba942edbca8b  app/src/main/java/com/sergey/reader/ReaderApplication.kt
-b0c1d80c91a92991bd793f8033180b06840b45e9792f320a300896880d9bcf4b  app/src/main/java/com/sergey/reader/data/backup/BackupManager.kt
+6ca3bcd2c3fc2a814da6e48f5adef9515202cf9b782b72b6739b0f9aa1afdd59  app/src/main/java/com/sergey/reader/data/backup/BackupManager.kt
 ef81724af422febf4646566f443ef618692dd871828c726da60c16713310f82b  app/src/main/java/com/sergey/reader/data/db/Daos.kt
 df80b254b4b43f0249bd0b0cdb01f9eda7528ab7791078de1bd2307f7a69a0b5  app/src/main/java/com/sergey/reader/data/db/DocumentEntities.kt
 5bac9c4aadeaf0b59fd49496722987a04f0135cd76915ddb3957805d05767bab  app/src/main/java/com/sergey/reader/data/db/Entities.kt
@@ -33,12 +33,12 @@ f83b12937b2d51f8fcb370b5bab364c6f3111d790f771fc8116293c60dd50e31  app/src/main/j
 df838ec4949172e66cc26c88d3718f07a9e839e8ebe9e71f8443cda71de75ec4  app/src/main/java/com/sergey/reader/data/repository/BookRepository.kt
 f637e8bee08be8ef3b6faf02665cf635a84d4d2e378c7e524c4715c8a6452f3d  app/src/main/java/com/sergey/reader/data/settings/ReaderSettingsRepository.kt
 ba56098b8a01e54ee1a220cf880df58edf0f92d7d82c99d6c3a49dcb0bef9d96  app/src/main/java/com/sergey/reader/document/DjvuDocumentBackend.kt
-67e69c3c0a3a853feba59e338330876ba63ae10625c9fd8a38d39a5af75b064a  app/src/main/java/com/sergey/reader/document/DocumentBackend.kt
+d3fdcb452f92184772eca8d2da8ceaeaba99c8feaddd4337aaa9e03fa63cac3c  app/src/main/java/com/sergey/reader/document/DocumentBackend.kt
 17acbe7505e281bed34cd00202d9312ec8996f35baabe3e95d77c4ae2783cbfb  app/src/main/java/com/sergey/reader/document/DocumentErrors.kt
 3a8818cd85211858efb6bd0168fe308839b1eb60d10c6e13cc2c6dc7a258c0c7  app/src/main/java/com/sergey/reader/document/DocumentGeometry.kt
 208ff228aeeeeeea36bd79f3c9348d56665cb3479db2f8fdea5c8aafee00000a  app/src/main/java/com/sergey/reader/document/DocumentPersistence.kt
 18438be61467cfea4cd073f9517fdcfa9f2c65327551e8a0506893e0eaf10aea  app/src/main/java/com/sergey/reader/document/DocumentSearchNavigator.kt
-f126c914f87232127e20c9fba6a24bab406fa70d2cef5a7f288a35984793c9a0  app/src/main/java/com/sergey/reader/document/DocumentTextLayer.kt
+b0b8859ae634fa1678d769785c9bb34a66b83ee3ada7cf542895831dd2fa40a3  app/src/main/java/com/sergey/reader/document/DocumentTextLayer.kt
 2ed245b48e97f95361798611d0ee4cccf3786086295c6b2f535ea72073de126e  app/src/main/java/com/sergey/reader/document/DocumentTextStore.kt
 f612927e2b28d602620c50db331c1eb1a1faf41e56cd4850eb9c6e9fc78af3c9  app/src/main/java/com/sergey/reader/document/DocumentTiles.kt
 ebce84a4f7811891fce00b012e77d2c44da25938ae1ae43355a2c1a63139d813  app/src/main/java/com/sergey/reader/document/PdfDocumentBackend.kt
@@ -62,7 +62,7 @@ fb44bf2f29858531f78dd95a22fa52058df3f738d8a0b322d2c21e43ca0fd1eb  app/src/main/j
 8c83737e6cedd0ce362b28cd359ba8b33da77d64d6365b81acc7fe046184fc9b  app/src/main/java/com/sergey/reader/ui/screens/DetailsScreen.kt
 ede0c6f80cbf6731c03c495e885a17964187491a26c15f01410ec0cee65e90c2  app/src/main/java/com/sergey/reader/ui/screens/LibraryScreen.kt
 f75f6ea19033a26d5ebaa7d062246acd8e481c80b94d692373b89238958ce68f  app/src/main/java/com/sergey/reader/ui/screens/ReaderScreen.kt
-80c1bf71c48a1d8c5ab8bdfdd1ea31e6ec678f585391c35bff546a39a1686358  app/src/main/java/com/sergey/reader/ui/screens/ResearchScreen.kt
+141d09ee054354937e13b1a3a6927bccdaf3308c2ff2e830b2b6f9f7a2dc09f9  app/src/main/java/com/sergey/reader/ui/screens/ResearchScreen.kt
 48c4be5f0ab03e57632d44b3613ce6bc28db9dc3f07a71cf779e68c91a7f2b00  app/src/main/java/com/sergey/reader/ui/screens/SettingsScreen.kt
 4847904e5ec31991b991c1466a40231787319b49dac4a7fec5dc62340ff8b2ea  app/src/main/java/com/sergey/reader/ui/theme/AppTheme.kt
 d6d9ef596cf9850c7710f33ff6619456c1141a3b943d503d8359b83663172878  app/src/main/java/com/sergey/reader/ui/theme/SystemBars.kt
@@ -78,7 +78,7 @@ c8efc6c0f9a07edf227aa673dc627d31926318e7ff99c015b661e39a329aa47a  app/src/main/r
 a4933628d1b48ed647c992d916cd2745617481a1c7bd23a4b1f07a2f782e835b  app/src/main/res/values/styles.xml
 2aae05e437e59e173164c5dd7da3ecad810c2a31d4ba4897b5a457e98ebb3183  app/src/test/java/com/sergey/reader/document/DocumentGeometryTest.kt
 2df41dbff29539e94475b3ce0f31343ca662f78fe428d7cd12267d31ee15eb03  app/src/test/java/com/sergey/reader/document/DocumentRangeSearchTest.kt
-5fa795337288a5310b5a15e47758f04ad27bb40abbe1f06ef394a04f15f9616f  app/src/test/java/com/sergey/reader/document/DocumentTextTest.kt
+b6b41758361f457c9154289e1e29a875d3679e2bb7304d16b47fc429ee1575eb  app/src/test/java/com/sergey/reader/document/DocumentTextTest.kt
 88f604b79c49ccc6e02391503bdeea20d1dde11cb8ec77e441049e3b520b5a51  app/src/test/java/com/sergey/reader/ui/reader/ExactPaginatorPositionTest.kt
 d9afedaa4996acedfb3cbd53a87a6824b2597e7189b44cf4f2ae457ea0aae109  app/src/test/java/com/sergey/reader/util/LibraryQueryTest.kt
 971acec9090fde502bab634fa729ceb4af636d9037349e7636cf266aff31ff7b  app/src/test/java/com/sergey/reader/util/PageChunkerTest.kt

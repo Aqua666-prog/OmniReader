@@ -1,5 +1,13 @@
 # 0.8.0 — завершение Document Viewer после восстановления
 
+### Post-recovery CI fixes
+
+- Исправлен реальный regression в `DocumentTextPage.words`: `BreakIterator.apply { setText(text) }` обращался к собственному `BreakIterator.text`, поэтому список слов оставался пустым и hit-test выделения всегда возвращал `null`.
+- Добавлены regression tests для hit-test после zoom/pan и Unicode-слов (русский, Hebrew/Yiddish, Arabic, Latin, emoji).
+- Убрана несовместимая с AGP 9 передача `Provider` в legacy SourceSet API; generated OCR assets подключаются как разрешённая директория с явной зависимостью `preBuild`.
+- Backup/restore теперь синхронно подтверждает staging/completion flag, а manifest резервной копии содержит актуальную версию 0.8.0.
+- Экспорт исследовательских заметок перенесён с UI thread на `Dispatchers.IO`; CI получил полный вывод failed assertions.
+
 - Добавлен офлайн OCR Tesseract 5.5.1 для PDF/DjVu-страниц без нативного текстового слоя; языки eng/rus/heb/yid/ara, модели pinned и проверяются при сборке.
 - OCR интегрирован с поиском и выделением; результат кэшируется локально с ревизией документа и ограничением размера.
 - Межстраничное выделение с единым Unicode-текстом, геометрией нескольких страниц, обратным перетаскиванием и автопрокруткой в непрерывном режиме.
