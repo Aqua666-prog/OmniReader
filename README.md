@@ -46,9 +46,10 @@ Workflow последовательно загружает pinned DjVu backend �
 
 ## Локальная сборка
 
-Требуются Java 17, Android SDK 36, build-tools 36.0.0 и Gradle 9.5.0 согласно унаследованной конфигурации проекта:
+Требуются Java 17, Android SDK Platform 37.0, build-tools 37.0.0 и Gradle 9.5.0. Проект компилируется с `compileSdk = 37`, но сохраняет `targetSdk = 36`. Для `sdkmanager` пакет API 37 называется `platforms;android-37.0` (с суффиксом `.0`):
 
 ```bash
+sdkmanager --install "platforms;android-37.0" "build-tools;37.0.0"
 gradle testDebugUnitTest lintDebug assembleDebug --stacktrace
 ```
 

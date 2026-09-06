@@ -133,7 +133,7 @@ val prepareOcrModels = tasks.register("prepareOcrModels") {
         }
     }
 }
-android.sourceSets.getByName("main").assets.srcDir(ocrAssets.get().asFile)
+android.sourceSets.getByName("main").assets.srcDir(ocrAssets)
 tasks.named("preBuild").configure { dependsOn(prepareOcrModels) }
 
 dependencies {
@@ -163,7 +163,7 @@ dependencies {
 
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
 
-    // PDFium rendering + glyph coordinates; version reviewed at tag 2.0.3.
+    // PDFium rendering + glyph coordinates; 2.0.3 requires compileSdk >= 37.
     implementation("io.legere:pdfiumandroid:2.0.3")
 
     // Tesseract 5.5.1 wrapper; official 4.9.0 JitPack coordinates from the upstream README.

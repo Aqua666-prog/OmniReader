@@ -12,3 +12,7 @@
 В текущей среде нет Gradle и Android SDK, поэтому полный Android compile, lint, JVM Gradle tests и instrumented tests здесь не запускались. Это честно оставлено на штатный GitHub Actions/Android environment; CI также проверяет фактически упакованные `.so` на 16 KB page-size compatibility.
 
 Подробности реализации и оставшиеся device-level проверки: `docs/DOCUMENT_VIEWER.md` и `docs/DOCUMENT_QA.md`.
+## Исправление CI для Android 17 / API 37
+
+`io.legere:pdfiumandroid:2.0.3` требует `compileSdk >= 37`. При этом Google публикует платформу API 37 для `sdkmanager` под идентификатором `platforms;android-37.0`, а не `platforms;android-37`. Workflow исправлен на `compileSdk = 37`, установку `platforms;android-37.0` и `build-tools;37.0.0`, с явной проверкой наличия `android.jar` и `zipalign` перед Gradle-сборкой. `targetSdk` остаётся 36.
+
