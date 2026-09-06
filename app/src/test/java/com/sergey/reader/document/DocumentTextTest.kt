@@ -25,14 +25,25 @@ class DocumentTextTest {
         assertFalse(hits[0].bounds.isEmpty())
     }
     @Test fun selectionHitTestUsesPageCoordinatesAfterZoomAndPan() {
-        val p=page("alpha beta")
-        val placement=PagePlacement(7,DRect(0.0,800.0,1200.0,2400.0),DSize(600.0,800.0))
-        val t=DocumentTransform(12.0,250.0,19000.0)
-        val point=DPoint(72.0,25.0)
-        val screen=t.toScreen(placement.toLayout(point))
-        val hit=p.wordAt(placement.toPage(t.toDocument(screen)))
-        assertEquals("Expected beta at page point $point; hit=${hit?.text}, bounds=${hit?.bounds}", "beta", hit?.text)
-        assertEquals("beta",DocumentSelection(p,hit!!.start,hit.end).text)
+        val p = page("alpha beta")
+        val placement = PagePlacement(
+            7,
+            DRect(0.0, 800.0, 1200.0, 2400.0),
+            DSize(600.0, 800.0)
+        )
+        val t = DocumentTransform(12.0, 250.0, 19000.0)
+
+        val original = DPoint(65.0, 25.0)
+        val screen = t.toScreen(placement.toLayout(original))
+        val restored = placement.toPage(t.toDocument(screen))
+
+        assertEquals(original.x, restored.x, 0.000001)
+        assertEquals(original.y, restored.y, 0.000001)
+
+        val hit = p.wordAt(restored)
+        assertNotNull(hit)
+        assertEquals("beta", hit!!.text)
+        assertEquals("beta", DocumentSelection(p, hit.start, hit.end).text)
     }
     @Test fun scannedPageDoesNotInventText() {
         val scan=DocumentTextPage(0,"",emptyList())
