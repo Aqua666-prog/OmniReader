@@ -31,7 +31,7 @@ class DocumentTextTest {
         val point=DPoint(72.0,25.0)
         val screen=t.toScreen(placement.toLayout(point))
         val hit=p.wordAt(placement.toPage(t.toDocument(screen)))
-        assertEquals("beta",hit?.text)
+        assertEquals("Expected beta at page point $point; hit=${hit?.text}, bounds=${hit?.bounds}", "beta", hit?.text)
         assertEquals("beta",DocumentSelection(p,hit!!.start,hit.end).text)
     }
     @Test fun scannedPageDoesNotInventText() {
